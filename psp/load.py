@@ -51,7 +51,7 @@ def load(trange=['2018-11-5', '2018-11-6'],
         from the secure site. - Ben Short
         """
         daytypelist = ['rfs_burst','rfs_hfr','rfs_lfr','tds_wf','dfb_ac_bpf','dfb_dc_bpf','dfb_ac_spec','dfb_dc_spec','dfb_ac_xspec','dfb_dc_xspec']
-        othertypelist = ['mag_RTN_4_Sa_per_Cyc','mag_RTN_1min','mag_SC_1min','mag_SC_4_Sa_per_Cyc','f2_100bps']
+        othertypelist = ['mag_RTN_4_Sa_per_Cyc','mag_RTN_1min','mag_SC_1min','mag_SC_4_Sa_per_Cyc','f2_100bps','aeb1_hk','aeb2_hk']
         
         if datatype in daytypelist:
             dateres = '_%Y%m%d' #these datatypes do not have hour resolution.
