@@ -17,7 +17,8 @@ def load(trange=['2018-11-5', '2018-11-6'],
          downloadonly=False,
          notplot=False,
          no_update=False,
-         time_clip=False):
+         time_clip=False,
+         last_version=False):
     """
     This function loads Parker Solar Probe data into tplot variables; this function is not 
     meant to be called directly; instead, see the wrappers: 
@@ -68,13 +69,51 @@ def load(trange=['2018-11-5', '2018-11-6'],
         pathformat = instrument + '/' + level + '/' + datatype + dateformat+nameform+'_fld_' + level + '_' + datatype + asterisk + dateres + '_v??.cdf'
         file_resolution = 6*3600.
         
-        
+    
     elif instrument == 'spc':
-        pathformat = 'sweap/spc/' + level + '/' + datatype + '/%Y/psp_swp_spc_' + datatype + '_%Y%m%d_v??.cdf'
+        if os.environ.get('PSP_SWEAP_ID'):
+            dateformat = '/%Y/%m/'
+            
+            if level == 'L1':
+                pathformat = 'sweap/spc/'+level+ dateformat + datatype + '/' + 'psp_swp_spc' + datatype + '_%Y%m%d_v??.cdf'
+            else:
+                pathformat = 'sweap/spc/'+level+ dateformat +'psp_swp_spc_l'+level[1]+'i_%Y%m%d_v??.cdf'
+            
+        
+        else:
+            pathformat = 'sweap/spc/' + level + '/' + datatype + '/%Y/psp_swp_spc_' + datatype + '_%Y%m%d_v??.cdf'
+        
+        
+        
     elif instrument == 'spe':
-        pathformat = 'sweap/spe/' + level + '/' + datatype + '/%Y/psp_swp_sp?_*_%Y%m%d_v??.cdf'
+        if os.environ.get('PSP_SWEAP_ID'):
+            dateformat = '/%Y/%m/'
+            
+            if level == 'L1':
+                pathformat = 'sweap/spe/'+level+'/' + datatype + dateformat + '/psp_swp_spc' + datatype + '_%Y%m%d_v??.cdf'
+            elif level[0:2] == 'L2':
+                pathformat = 'sweap/spe/'+level+'/'+ datatype + dateformat +'/psp_swp_'+datatype+'_'+level+'_*_%Y%m%d_v??.cdf'
+            elif level == 'L3':
+                pathformat = 'sweap/spe/'+level+'/'+ datatype + dateformat +'/psp_swp_'+datatype[0:7]+'_'+level+'_'+datatype[7:11]+'_%Y%m%d_v??.cdf'
+        else:    
+            pathformat = 'sweap/spe/' + level + '/' + datatype + '/%Y/psp_swp_sp?_*_%Y%m%d_v??.cdf'
+            
     elif instrument == 'spi':
-        pathformat = 'sweap/spi/' + level + '/' + datatype + '/%Y/psp_swp_spi_*_%Y%m%d_v??.cdf'
+        
+        if os.environ.get('PSP_SWEAP_ID'):
+            dateformat = '/%Y/%m/'
+            
+            if level =='L1':
+                pathformat = 'sweap/spi/'+level+'/'+datatype+dateformat+'psp_swp_'+datatype+'_'+level+'_%Y%m%d_v??.cdf'
+            
+            else:
+                pathformat = 'sweap/spi/'+level+'/'+datatype+dateformat+'psp_swp_'+datatype+'_'+level+'_*_%Y%m%d_v??.cdf'
+        
+        else:
+            pathformat = 'sweap/spi/' + level + '/' + datatype + '/%Y/psp_swp_spi_*_%Y%m%d_v??.cdf'
+    
+    
+   
     elif instrument == 'epihi':
         pathformat = 'isois/epihi/' + level + '/' + datatype + '/%Y/psp_isois-epihi_' + level + '*_%Y%m%d_v??.cdf'
     elif instrument == 'epilo':
@@ -128,7 +167,7 @@ def load(trange=['2018-11-5', '2018-11-6'],
     
     out_files = []
 
-    files = download(remote_file=remote_names, remote_path=server, local_path=CONFIG['local_data_dir'], username=user, password=passw, no_download=no_update,last_version=False)
+    files = download(remote_file=remote_names, remote_path=server, local_path=CONFIG['local_data_dir'], username=user, password=passw, no_download=no_update,last_version=last_version)
     if files is not None:
         for file in files:
             out_files.append(file)

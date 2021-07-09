@@ -11,7 +11,8 @@ def fields(trange=['2018-11-5', '2018-11-6'],
         downloadonly=False,
         notplot=False,
         no_update=False,
-        time_clip=False):
+        time_clip=False,
+        last_version=False):
     """
     This function loads Parker Solar Probe FIELDS data
     
@@ -58,7 +59,9 @@ def fields(trange=['2018-11-5', '2018-11-6'],
         List of tplot variables created.
 
     """
-    return load(instrument='fields', trange=trange, datatype=datatype, level=level, suffix=suffix, get_support_data=get_support_data, varformat=varformat, varnames=varnames, downloadonly=downloadonly, notplot=notplot, time_clip=time_clip, no_update=no_update)
+    return load(instrument='fields', trange=trange, datatype=datatype, level=level, suffix=suffix, \
+                get_support_data=get_support_data, varformat=varformat, varnames=varnames, downloadonly=downloadonly, \
+                    notplot=notplot, time_clip=time_clip, no_update=no_update,last_version=last_version)
 
 def spc(trange=['2018-11-5', '2018-11-6'], 
         datatype='l3i', 

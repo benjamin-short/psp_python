@@ -15,3 +15,7 @@ from .harmonic_wave import harm_wave_id
 from .wave_analysis import wave_2d_hist
 from .wave_analysis import py_archipelago
 from .epoch_study import mag_epoch
+from .epoch_study import vel_epoch
+from .epoch_study import spec_epoch
+from .epoch_study import ion_epoch
+from .epoch_study import elec_epoch

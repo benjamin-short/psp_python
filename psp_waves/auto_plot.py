@@ -23,6 +23,9 @@ import pyspedas.stereo as ste
 from matplotlib import gridspec
 
 from .config import CONFIG
+from .config import enc_flt
+from .config import per_flt
+from .config import per_dist_lst
 
 def auto_plot(fd="2018-10-03"):
     first_day = fd
@@ -31,24 +34,6 @@ def auto_plot(fd="2018-10-03"):
     i_day = pys.time_float(first_day)
     
     loop_day = pys.time_float(current_day) - 86400.
-    
-    enc_flt = [pys.time_float(['2018-08-23 05:51:00','2019-01-20 01:03:00']),
-               pys.time_float(['2019-01-20 01:04:00','2019-06-18 20:15:00']),
-               pys.time_float(['2019-06-18 20:15:00','2019-11-15 15:26:00']),
-               pys.time_float(['2019-11-15 15:27:00','2020-04-03 09:00:00']),
-               pys.time_float(['2020-04-03 09:01:00','2020-08-11 07:46:00']),
-               pys.time_float(['2020-08-11 07:47:00','2020-12-01 08:39:00']),
-               pys.time_float(['2020-12-01 08:40:00','2021-03-23 17:03:00']),
-               pys.time_float(['2021-03-23 17:04:00','2021-08-23 17:03:00'])] #encounter list 1-8
-    
-    per_flt = [pys.time_float('2018-11-06 03:27:00'),
-               pys.time_float('2019-04-04 22:39:00'),
-               pys.time_float('2019-09-01 17:50:00'),
-               pys.time_float('2020-01-29 09:37:00'),
-               pys.time_float('2020-06-07 08:23:00'),
-               pys.time_float('2020-09-27 09:16:00'),
-               pys.time_float('2021-01-17 17:40:00')] #perihelion dates for encounters 1-7
-    
     
     while i_day < loop_day:
             
@@ -62,7 +47,7 @@ def auto_plot(fd="2018-10-03"):
         else:
             mag_data_type = mag_list[1]
         
-        mag_in = psp.fields(trange=[t0,tf], datatype=mag_data_type, level='l2')    
+        mag_in = psp.fields(trange=[t0,tf], datatype=mag_data_type, level='l2',last_version=True)    
         acspec_in = psp.fields(trange=[t0,tf], datatype='dfb_ac_spec', level='l2')
         dcspec_in = psp.fields(trange=[t0,tf], datatype='dfb_dc_spec', level='l2')
         #burst = psp.fields(trange=[t0,tf], datatype='dfb_dbm_dvac', level='l2')
@@ -100,8 +85,8 @@ def auto_plot(fd="2018-10-03"):
             enci+=1
         
         #print('Encounter',encounter+1)
-        encx = encx_data[encounter]
-        ency = ency_data[encounter]
+        encx = encx_data[encounter-1]
+        ency = ency_data[encounter-1]
         
         """ STEREO and SOHO Image Data, 171 Angstrom """
         download171 = ste.secchi(trange=[t0,tf],chn='171')
