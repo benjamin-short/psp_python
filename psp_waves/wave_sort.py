@@ -57,9 +57,10 @@ def event_find(t0='2018-10-03',view_type=0): #used to find interesting waves
             
             if isfile:
                 
+                cv2.namedWindow("output", cv2.WINDOW_NORMAL)
                 img = cv2.imread(viewpath+file)
-                cv2.imshow('image',img)
-                
+                imS = cv2.resize(img, (2800, 2000))  
+                cv2.imshow('output',imS)
                 k = cv2.waitKey(0)
                 
                 if k == ord('p'): #skips forward 20 minutes
@@ -81,9 +82,11 @@ def event_find(t0='2018-10-03',view_type=0): #used to find interesting waves
                     if isdir == False:
                         os.makedirs(savepath+time_string(t_win,fmt='/%Y/%m/'))
                     cv2.imwrite(savepath+time_string(t_win,fmt='/%Y/%m/psp_%Y%m%d%H%M'+file_suffix),img)
+                    
                     print(time_string(t_win,fmt='psp_%Y%m%d%H%M'+file_suffix)+' has been saved!')
                 if k == ord('q'): #quits the program
                     cv2.destroyAllWindows()
+                    cv2.waitKey(1)
                     i_day = 0
             else:
                 if index == 1:
@@ -98,7 +101,7 @@ def event_find(t0='2018-10-03',view_type=0): #used to find interesting waves
             i_day-=86400.
             i_min = 85200.
     cv2.destroyAllWindows()
-    
+    cv2.waitKey(1)
     
 def event_sort():   #used to sort interesting wave events by what is interesting about them
     
@@ -137,10 +140,11 @@ def event_sort():   #used to sort interesting wave events by what is interesting
     print('')
     
     while i_file >= 0 and i_file <= len(file_list)-1:
-        
+
+        cv2.namedWindow("output", cv2.WINDOW_NORMAL)
         img = cv2.imread(file_list[i_file])
-        cv2.imshow('image',img)
-                
+        imS = cv2.resize(img, (3000, 2400))  
+        cv2.imshow("output",img)    
         k = cv2.waitKey(0)
                 
         if k == ord('p'): #moves forward one file
@@ -205,7 +209,11 @@ def event_sort():   #used to sort interesting wave events by what is interesting
         
         if k == ord('q'): #quits the program
             cv2.destroyAllWindows()
+            cv2.waitKey(1)
             i_file = -100
+            
+    cv2.destroyAllWindows()
+    cv2.waitKey(1)
         
 def wave_sort(arg=''):   #used to sort interesting wave events by what is interesting about them
     

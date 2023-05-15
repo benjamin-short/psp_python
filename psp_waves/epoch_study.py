@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+9#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Tue Apr 27 10:50:30 2021
@@ -17,15 +17,22 @@ from statistics import median
 import math
 import matplotlib.pyplot as plt
 import cdflib
+from scipy.interpolate import interp1d as interp
+import time
+#from tkinter import *
+from lmfit.models import SkewedGaussianModel,GaussianModel
+from matplotlib.ticker import FormatStrFormatter
 
 from .config import CONFIG
 from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
+from .config import Rs_grps
+from .davidtensor import david_rot_mat
+from .davidtensor import david_anis
+from .davidtensor import steven_anis
 
-Rs_grps = [[50,45],[45,40],[40,35],[35,30],[30,25],[25,20],[20,1]]
-
-def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len = 1,by_Rs=False):
+def mag_epoch(plot='epoch',quick=True,no_enc_1=False,no_enc_7=False, no_n_hat = False, win_len = 1,by_Rs=False,wavelen=90):
 
     i=0
     enc_num = len(per_flt)
@@ -33,7 +40,7 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
         
         Rs = 6.957e5 #solar radius in km
         Rs_in_m = Rs*10**3
-        w = 2*np.pi/(25.38*86400) # angular frequency of the sun in degrees/sec
+        w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
         
         v = 100000 #m/s typical slow solar wind speed, may replace later with measurement values
         
@@ -41,24 +48,31 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
         if not by_Rs:
             if i==0:
                 csv_filename = 'harmwave_master_arch.csv'
-                csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 if no_enc_7:
                     name = 'All Encounters sans 7'
+                elif no_enc_1:
+                    name = 'All Encounters sans 1'                
                 else:
                     name = 'All Encounters'
             else:
                 csv_filename = 'enc_'+str(i)+'_harmwave_arch.csv'
-                csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                # csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/histograms/'
                 savename = 'Enc_'+str(i)+'_mag_epoch.png'
                 name = 'Encounter '+str(i)
         
         else:
             csv_filename = 'harmwave_master_arch.csv'
-            csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            #csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
             if i==0:
                 if no_enc_7:
                     name = 'All Radial Distances sans Enc 7'
+                elif no_enc_1:
+                    name = 'All Radial Distances sans Enc 1'
                 else:
                     name = 'All Radial Distances'
             else:
@@ -71,7 +85,7 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
             df = pd.read_csv(csv_path+csv_filename)
             bf = df.to_numpy()
 
-            af = np.delete(bf,bf[:,1]<90,0)
+            af = np.delete(bf,bf[:,1]<wavelen,0)
             
             if by_Rs and i !=0:
                 af = np.delete(af,af[:,2]>Rs_grps[i-1][0],0)
@@ -83,6 +97,13 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                     dates[j] = dates[j][0:4]
                 npdates = np.array(dates)
                 af = np.delete(af,npdates=='2021',0)
+                
+            if no_enc_1 and i != 1: #this portion of code kills events in encounter 1
+                dates = list(af[:,0])
+                for j in range(len(dates)):
+                    dates[j] = dates[j][0:4]
+                npdates = np.array(dates)
+                af = np.delete(af,npdates=='2018',0)
             
             wave_start = np.array(pys.time_float(af[:,0]))
             wave_end = np.array(wave_start+af[:,1])
@@ -103,6 +124,8 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
             mag_time = []
             mag_r_data = []
             mag_t_data = []
+            mean_t_data = []
+            out_t_data = []
             mag_n_data = []
             
             vel_time = []
@@ -123,8 +146,9 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
 
             for j in range(len(uniq_dates)): #gather data for each day range(2):#
                 
+
                 
-                """ PSP wave data """
+                """ PSP mag data """
                 if quick==True:
                     pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True)
                     mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
@@ -150,13 +174,31 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                 dens_data_arr = dens_data[1]
                 
                 idlpath = '/Users/besh2109/Desktop/psp_processed_SPANi_data/'
-                idlfile = 'psp_spani_L3_rtn_sc_velocities_'+pys.time_string(date_flt[j],fmt='%Y_%m_%d')+'_00_00_00__20210614.sav'
+                idlfile = 'psp_spani_L3_rtn_sc_velocities_'+pys.time_string(date_flt[j],fmt='%Y_%m_%d')+'_00_00_00__20210806.sav'
                 
-                vel_raw = readsav(idlpath+idlfile)
-                vel_data = vel_raw.psp_swp_spi_sf00_l3_vel_rtn
+                e1c = pys.time_float(uniq_dates[j])
+                # if e1c > enc_flt[0][0] and e1c < enc_flt[2][1]: #if encounter 1-3, use SPC
+                if e1c > enc_flt[0][0] and e1c < enc_flt[0][1]: #if encounter 1, use SPC
+                    enc1check = True
+                else:
+                    enc1check = False
                 
-                vel_time_arr = vel_data[0][0]
-                vel_data_arr = np.transpose(vel_data[0][1])
+                
+                if enc1check:
+                    pys.psp.spc(trange=[uniq_dates[j],uniq_next[j]], level='L3')
+                    vel_data = pyt.get_data('vp_fit_RTN')
+                    # print(vel_data)
+                    vel_time_arr = vel_data[0]
+                    # vel_data_arr = vel_data[1][:,0]
+                    vel_data_arr = vel_data[1]
+                    
+                else:
+                    vel_raw = readsav(idlpath+idlfile)
+                    vel_data = vel_raw.psp_swp_spi_sf00_l3_vel_rtn_sun
+                
+                    vel_time_arr = vel_data[0][0]
+                    vel_data_arr = np.transpose(vel_data[0][1])
+                    
                 
                 """ date management """
                 
@@ -164,6 +206,9 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                 date_end_flt = pys.time_float(uniq_next[j])
                 
                 where = np.where(np.logical_and(wave_start>date_strt_flt,wave_start<date_end_flt))
+                
+                wave_start_tmp = np.array(wave_start[where])
+                wave_end_tmp = np.array(wave_end[where])
                 
                 win_start_tmp = np.array(window_start[where])
                 win_end_tmp = np.array(window_end[where])
@@ -181,11 +226,28 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                     mag_t = np.array(mag_data_arr[mag_where,1])
                     mag_n = np.array(mag_data_arr[mag_where,2])
     
+                    wave_where = np.where((mag_time_arr > wave_start_tmp[k])&(mag_time_arr < wave_end_tmp[k]))
+                    wave_where = wave_where[0]
+                    
+                    bef_where = np.where((mag_time_arr > win_start_tmp[k])&(mag_time_arr < wave_start_tmp[k]))
+                    bef_where = bef_where[0]
+                    
+                    aft_where = np.where((mag_time_arr > wave_end_tmp[k])&(mag_time_arr < win_end_tmp[k]))
+                    aft_where = aft_where[0]
+                    
+                    out_where = np.append(bef_where,aft_where)
+                    
+                    in_mean_t = np.mean(mag_data_arr[wave_where,1])
+                    out_mean_t = np.mean(mag_data_arr[out_where,1])
+    
                     mag_time.append(mag_ti)
                     mag_r_data.append(mag_r)
                     mag_t_data.append(mag_t)
                     mag_n_data.append(mag_n)
                     mag_len_arr.append(len(mag_ti))
+                    
+                    mean_t_data.append(in_mean_t)
+                    out_t_data.append(out_mean_t)
                     
                     """ #bulk velocity data """
                     vel_where = np.where((vel_time_arr > win_start_tmp[k]) & (vel_time_arr < win_end_tmp[k]))
@@ -239,7 +301,24 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
             plt.xlabel("Distance in Rs")
             plt.show()
             """
+            wave_mean_mean = np.mean(mean_t_data)
+            wave_med_mean = np.median(mean_t_data)
+            
+            out_mean_mean = np.mean(out_t_data)
+            out_med_mean = np.median(out_t_data)
 
+            
+            # print()
+            # print(str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+' Rs')
+            # print(wave_mean_mean,' mean of mean')
+            # print(wave_med_mean, ' median of mean')
+            # print()
+            # print(out_mean_mean,'out mean of mean')
+            # print(out_med_mean, 'out median of mean')
+            # print()
+            # time.sleep(5.5)
+            
+            
             min_mag_len = min(mag_len_arr) #minimum length of mag data
             n_mag_bins = int(min_mag_len)
             
@@ -256,6 +335,7 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
             n_v_data = []
             θ_def = [] #cosine of the deflection angle
             phi_def = []
+            α_def = []
             for l in range(len(mag_time)): #this block seeks to normalize all the magnetic field data 
                                            #to the length of the shortest window
                 
@@ -317,9 +397,9 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                     wind_where = np.where((vel_ind_arr>=win_str)&(vel_ind_arr<win_end))
                     wind_where = wind_where[0]
                     vel_time_val_tmp = np.median(vel_time[l][wind_where])
-                    vel_r_val_tmp = np.median(vel_r_data[l][wind_where])
-                    vel_t_val_tmp = np.median(vel_t_data[l][wind_where])
-                    vel_n_val_tmp = np.median(vel_n_data[l][wind_where])
+                    vel_r_val_tmp = np.nanmedian(vel_r_data[l][wind_where])
+                    vel_t_val_tmp = np.nanmedian(vel_t_data[l][wind_where])
+                    vel_n_val_tmp = np.nanmedian(vel_n_data[l][wind_where])
                     norm_vel_time[m] = vel_time_val_tmp
                     norm_vel_r_val[m] = vel_r_val_tmp
                     norm_vel_t_val[m] = vel_t_val_tmp
@@ -353,6 +433,9 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                 vel_ind_arr = np.arange(vel_len_arr[l])
                 cos_bin_size = len(r_b)/len(v)
                 
+                tan_α = np.zeros((len(r_b),))
+                
+                
                 
                 #print(v[0])
                 for n in range(len(v)):
@@ -366,9 +449,12 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                     cos_θ[win_str:win_end] = r_b[win_str:win_end]*dot_term - t_b[win_str:win_end]*dot_term*w*r_data_mod[l]/v[n]*np.sin(p_theta[l])
                     
                 #cos_θ = np.array(r_b*dot_term - t_b*dot_term*w*r_data[l]/v*np.sin(p_theta[l]))
+                
+                park_proj = np.sqrt(r_b**2+t_b**2)*np.cos(phi_dif)
 
                 θ_def.append(np.arccos(cos_θ)*180/np.pi)
                 phi_def.append(phi_dif*180/np.pi)
+                α_def.append(np.arctan(n_b/np.cos(phi_dif))*180/np.pi)
 
             if plot =='epoch' or plot == 'both':
                 
@@ -391,139 +477,104 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                     else:
                         savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_mag_epoch.png'
                 
+                plt.rcParams['font.size']='20'
                 fis1 = plt.figure(figsize=(15,15))
-                fis1.suptitle('Magnetic Field Unit Vector '+name, fontsize=16,y=0.92)
-                axs1 = fis1.add_subplot(411)
+                #fis1.suptitle('Magnetic Field Unit Vector '+name, fontsize=16,y=0.92)
+
+                ylabs = [r'$\frac{B_R}{|B|}$',r'$\frac{B_T}{|B|}$',r'$\frac{B_N}{|B|}$','Deflection Angle θ']
+                datas = [r_b_data,t_b_data,n_b_data,phi_def]
                 
+                datamax = phi_def
+                    
                 ind_hist = []
                 data_hist = []
-                for o in r_b_data:
+                ind_line = np.linspace(-win_len,win_len+1,len(datamax[0]))
+                median_line = np.median(np.array(datamax),0)
+                quart_line1 = np.quantile(np.array(datamax),0.25,axis=0)
+                quart_line2 = np.quantile(np.array(datamax),0.75,axis=0)
+                for o in datamax:
                     ind = list(range(len(o)))
                     data = list(o)
                     ind_hist = ind_hist + ind
                     data_hist = data_hist + data
                     #axs1.plot(o)
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
+                ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                max_hist_arr = np.array(data_hist)
+                histo,xedge,yedge = np.histogram2d(ind_hist_arr,max_hist_arr,bins=[n_mag_bins,40])
+                histomax = np.transpose(histo)
+                histomax[histomax==0]=np.nan
                 
-                            
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,40])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
+                for ii in range(4):
+
+                    axs = fis1.add_subplot(4,1,ii+1)
+                
+                    data1 = datas[ii]
+                    
+                    ind_hist = []
+                    data_hist = []
+                    ind_line = np.linspace(-win_len,win_len+1,len(data1[0]))
+                    median_line = np.median(np.array(data1),0)
+                    quart_line1 = np.quantile(np.array(data1),0.25,axis=0)
+                    quart_line2 = np.quantile(np.array(data1),0.75,axis=0)
+                    for o in data1:
+                        ind = list(range(len(o)))
+                        data = list(o)
+                        ind_hist = ind_hist + ind
+                        data_hist = data_hist + data
+                        #axs1.plot(o)
+                    ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                    data_hist_arr = np.array(data_hist)
+                    
+                                
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,40])
+                    histo = np.transpose(histo)
+                    histo[histo==0]=np.nan
+                    
+                    histo = np.log(histo)
+        
+                    r_color = axs.pcolormesh(xedge,yedge,histo, cmap='magma',vmax=np.nanmax(histo))  #,np.log10(histo)
+                    # r_contour = axs.contour(xedge,yedge,histo, colors='white',vmax=np.nanmax(histomax))
+                    
+                    axs.plot(ind_line,median_line, color='darkturquoise',linewidth=2,label='Median')
+                    axs.plot(ind_line,quart_line1, color='seagreen',linewidth=2,label='1st quantile', linestyle='dashed')
+                    axs.plot(ind_line,quart_line2, color='seagreen',linewidth=2,label='3rd quantile', linestyle='dashed')
+                    
+                    axs.tick_params(axis='both', which='major', labelsize=16)
+                    if ii==0:
+                        axs.legend(loc=(1.1,0.55))
+                        #leg = axs.legend(bbox_to_anchor=(1.01,1), loc'upper left', borderaxespad=0)
+                    if ii!=3:
+                        axs.get_xaxis().set_ticks([])
+                        axs.set_ylabel(ylabs[ii],rotation=0,fontsize=32)
+                        axs.yaxis.set_label_coords(-0.085,0.5)
+                    else:
+                        axs.set_xlabel('Normalized Time',fontsize=18)
+                        axs.set_ylabel(ylabs[ii],fontsize=18)
+                        axs.yaxis.set_label_coords(-0.075,0.5)
     
-                r_color = axs1.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
+                    box = axs.get_position()
+                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+                    cbar = fis1.colorbar(r_color,cax=axColor)
+                    cbar.set_label(label='Ln(Counts)', size=16)
+                    cbar.ax.tick_params(labelsize=14) 
                 
-                #height = [-0.6,-0.6]
-                #endpoints = [n_mag_bins/3,2*n_mag_bins/3]
-                #axs1.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                axs1.set(title='mag_r, normalized time')
-                #plt.title()
-                #plt.show()
-                box = axs1.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(r_color,cax=axColor, label='Counts')
-                #fis2 = plt.figure(figsize=(15,10))
-                axs2 = fis1.add_subplot(412)
                 
-                ind_hist = []
-                data_hist = []
-                for o in t_b_data:
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs2.plot(o)
+                plt.subplots_adjust(wspace=0, hspace=0.05)
                 
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,40])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                t_color = axs2.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
+                # plt.show()
                 
-                box = axs2.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(t_color,cax=axColor, label='Counts')
+                # breakpoint()
                 
-                #height = [0,0]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs2.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_t_data)+1)
-                axs2.set(title='mag_t, normalized time')
-                #plt.title('mag_t first 73 waves, normalized time')
-                #plt.show()
-                
-                #fis3 = plt.figure(figsize=(15,10))
-                axs3 = fis1.add_subplot(413)
-                
-                ind_hist = []
-                data_hist = []
-                for o in n_b_data:
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs2.plot(o)
-                
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist) 
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,40]) 
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                n_color = axs3.pcolormesh(xedge,yedge,histo,cmap='jet')  #,np.log10(histo)
-                
-                box = axs3.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(n_color,cax=axColor, label='Counts')
-                
-                #height = [0,0]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs3.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_n_data)+1)
-                axs3.set(title='mag_n, normalized time')
-                #plt.title('mag_n first 73 waves, normalized time')
-                
-                axs4 = fis1.add_subplot(414)
-                
-                ind_hist = []
-                data_hist = []
-                for o in phi_def:
-                    ind = list(range(len(o)))
-                    data = list(o)#np.arccos(o)) #convert to deflection angle
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs2.plot(o)
-                
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist) 
-                
-                #axs4.scatter(ind_hist_arr,data_hist_arr,s=1)
-                #plt.show()
-                #yes
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,40]) 
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-                
-                n_color = axs4.pcolormesh(xedge,yedge,histo,cmap='jet')  #,np.log10(histo)
-                
-                box = axs4.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(n_color,cax=axColor, label='Counts')
-                
-                #height = [0,0]
-                #endpoints = [n_mag_bins/3+30,2*n_mag_bins/3-30]
-                #axs4.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_n_data)+1)
-                axs4.set_ylim([-80,80])
-                axs4.set(title='Deflection Angle θ, normalized time')
-                
-                plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
+                plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2) #dpi=300 changes the resolution of image.
                 plt.clf()
                 plt.cla()
                 plt.close('all')
                 plt.close(fis1)
-            
+                
+                # fig = plt.figure(figsize=(10,5))
+                
+                
+                
             if plot == 'dist' or plot == 'both':
                 
                 savepath = '/Users/besh2109/Desktop/PSP_epoch/mag_dist/'
@@ -545,200 +596,123 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
                     else:
                         savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_mag_dist.png'
                 
+                plt.rcParams['font.size']='20'
                 fig1 = plt.figure(figsize=(15,15))
-                fig1.suptitle('Magnetic Field Unit Vector Distributions '+name, fontsize=16,y=0.92)
-                ax1 = fig1.add_subplot(221)
-                ax2 = fig1.add_subplot(222)
-                ax3 = fig1.add_subplot(223)
-                ax4 = fig1.add_subplot(224)
+                # fig1 = plt.figure(figsize=(40,10))
+                #fig1.suptitle('Magnetic Field Unit Vector Distributions '+name, fontsize=16,y=0.92)
+            
+                xlabs = [r'$\frac{B_T}{|B|}$',r'$\frac{B_N}{|B|}$','Deflection Angle θ˚','Deflection Angle α˚']
+                titles = [r'${\hat{T}}$ Unit Vector',r'${\hat{N}}$ Unit Vector','Parker-Measurement RT Deflection Angle','Parker-Measurement N Deflection Angle']
+                datas = [t_b_data,n_b_data,phi_def,α_def]
                 
-                ind_hist = []
-                data_hist = []
-                for o in r_b_data:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
                 
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,125])
-                histo = np.transpose(histo)
+                # xlabs = [r'$\frac{B_R}{|B|}$',r'$\frac{B_T}{|B|}$',r'$\frac{B_N}{|B|}$','Deflection Angle θ']
+                # titles = [r'${\hat{R}}$ Unit Vector',r'${\hat{T}}$ Unit Vector',r'${\hat{N}}$ Unit Vector','Parker-Measurement Deflection Angle']
+                # datas = [r_b_data,t_b_data,n_b_data,phi_def]
+                
+                
+                for ii in range(4):
 
-                k=0
-                dist1r = np.zeros(histo[:,0].shape)
-                while k < round(n_mag_bins/3): #distribution 1
-                    dist1r = dist1r + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
+                    axs = fig1.add_subplot(2,2,ii+1)
+                    # axs = fig1.add_subplot(1,4,ii+1)
+                
+                    data1 = datas[ii]
+                    
+                    ind_hist = []
+                    data_hist = []
+                    for o in data1:
+                        ind = list(range(len(o)))
+                        data = list(o) #- np.median(o))
+                        ind_hist = ind_hist + ind
+                        data_hist = data_hist + data
+                    ind_hist_arr = np.array(ind_hist)
+                    data_hist_arr = np.array(data_hist)
+                        
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,125])
+                    histo = np.transpose(histo)
+                    
+                    k=0
+                    dist1r = np.zeros(histo[:,0].shape)
+                    while k < round(n_mag_bins/3): #distribution 1
+                        dist1r = dist1r + histo[:,k]#/np.sum(histo[:,k])
+                        k+=1
+                    
+                    k=round(n_mag_bins/3)
+                    dist2r = np.zeros(histo[:,0].shape)
+                    while k >= round(n_mag_bins/3) and k < round(2*n_mag_bins/3): #distribution 2
+                        dist2r = dist2r + histo[:,k]#/np.sum(histo[:,k])
+                        k+=1
+                    
+                    k=round(2*n_mag_bins/3)
+                    dist3r = np.zeros(histo[:,0].shape)
+                    while k >= round(2*n_mag_bins/3) and k<n_mag_bins: #distribution 3
+                        dist3r = dist3r + histo[:,k]#/np.sum(histo[:,k])
+                        k+=1
+                    
+                    #ax1.set_aspect(1)
+                    #ax1.set_adjustable('box')
+                    norm_val = np.max(dist2r) 
+                    # norm_val=1
+                    norm1 = np.sum(dist1r)
+                    norm2 = np.sum(dist2r)
+                    norm3 = np.sum(dist3r)
+                    err_1 = np.sqrt(dist1r)/norm_val
+                    err_2 = np.sqrt(dist2r)/norm_val
+                    err_3 = np.sqrt(dist3r)/norm_val
+                    
+                    axs.plot(yedge[1:len(yedge)],dist1r/norm_val,color='red',label='before region')
+                    axs.errorbar(yedge[1:len(yedge)],dist1r/norm_val, yerr=err_1,fmt = 'none',color='red')
+                    
+                    axs.plot(yedge[1:len(yedge)],dist2r/norm_val,color='green',label='during region')
+                    axs.errorbar(yedge[1:len(yedge)],dist2r/norm_val, yerr=err_2,fmt = 'none',color='green')
+                    
+                    axs.plot(yedge[1:len(yedge)],dist3r/norm_val,color='blue',label='after region')
+                    axs.errorbar(yedge[1:len(yedge)],dist3r/norm_val, yerr=err_3,fmt = 'none',color='blue')
+                    
+                    axs.set_ylim([-0.1,1.15])
+                    
+                    if ii==0:    
+                        #axs.text(0.78, -0.02, r'$\frac{B_R}{|B|}$',fontsize=30)
+                        axs.text(-0.4, 1.05, r'${\hat{T}}$ component of ${\hat{B}}$',fontsize=22)
+                        axs.set_xlim([-0.50,0.50])
+                    if ii==1:
+                        axs.legend(loc='center right')
+                        #axs.text(-0.04, -0.02, r'$\frac{B_T}{|B|}$',fontsize=30)
+                        axs.text(-0.4, 1.05, r'${\hat{N}}$ component of ${\hat{B}}$',fontsize=22)
+                        axs.set_xlim([-0.50,0.50])
+                    if ii==2:
+                        #axs.text(-0.04, -0.02, r'$\frac{B_N}{|B|}$',fontsize=30)
+                        # axs.text(-0.4, 1.05, r'${\hat{N}}$ component of ${\hat{B}}$',fontsize=22)
+                        # axs.set_xlim([-0.50,0.50])
+                        axs.text(-48, 1.07, 'Parker-Measurement RT Deflection Angle',fontsize=19)
+                        axs.set_xlim([-50,50])
+                    if ii == 3:
+                        #axs.text(-10, -0.05, 'Degrees',fontsize=22)
+                        axs.text(-48, 1.07, 'Parker-Measurement N Deflection Angle',fontsize=19)
+                        axs.set_xlim([-50,50])
+                    if ii in [1,3]:
+                    # if ii in [1,2,3]:
+                        axs.get_yaxis().set_ticks([])
+                    if ii in [0,2]:
+                    # if ii in [0]:
+                        axs.set_ylabel('Normalized Counts Distribution')
+                    # if ii in [0,1]:
+                    #     axs.set_title(titles[ii])
+                    # if ii in [2,3]:
+                    #     axs.set_xlabel(xlabs[ii])
+                    #ax1.set_ylim([0,120])
+                    if ii in [0,1]:#[0,1,2]:
+                        axs.set_xlabel(xlabs[ii],fontsize=26)
+                    else:
+                        axs.set_xlabel(xlabs[ii])
+                    axs.set_adjustable('box')
+                
+                
+                plt.subplots_adjust(wspace=0.04, hspace=0.22)
+                # plt.show()
+                
+                # breakpoint()
 
-                k=round(n_mag_bins/3)
-                dist2r = np.zeros(histo[:,0].shape)
-                while k >= round(n_mag_bins/3) and k < round(2*n_mag_bins/3): #distribution 2
-                    dist2r = dist2r + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_mag_bins/3)
-                dist3r = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_mag_bins/3) and k<n_mag_bins: #distribution 3
-                    dist3r = dist3r + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax1.set_aspect(1)
-                #ax1.set_adjustable('box')
-                norm_val = np.max(dist2r)
-                ax1.plot(yedge[1:len(yedge)],dist1r/norm_val,color='red',label='before wave')
-                ax1.plot(yedge[1:len(yedge)],dist2r/norm_val,color='green',label='during wave')
-                ax1.plot(yedge[1:len(yedge)],dist3r/norm_val,color='blue',label='after wave')
-                ax1.legend()
-                #ax1.set_ylim([0,120])
-                ax1.set_title('r-hat')
-                ax1.set_ylabel('Normalized Counts Distribution')
-                ax1.set_xlabel('Br/|B|')
-                ax1.set_adjustable('box')
-                #ax1.set_xlim(-25,25)
-                
-                #ax2 = fig1.add_subplot(2,2,(1,2))
-                
-                ind_hist = []
-                data_hist = []
-                for o in t_b_data:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,125])
-                histo = np.transpose(histo)
-                
-                
-
-                k=0
-                dist1t = np.zeros(histo[:,0].shape)
-                while k < round(n_mag_bins/3): #distribution 1
-                    dist1t = dist1t + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_mag_bins/3)
-                dist2t = np.zeros(histo[:,0].shape)
-                while k >= round(n_mag_bins/3) and k < round(2*n_mag_bins/3): #distribution 2
-                    dist2t = dist2t + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_mag_bins/3)
-                dist3t = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_mag_bins/3) and k<n_mag_bins: #distribution 3
-                    dist3t = dist3t + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax2.set_aspect(1)
-                #ax2.set_adjustable('box')
-                norm_val = np.max(dist2t)
-                ax2.plot(yedge[1:len(yedge)],dist1t/norm_val,color='red',label='before wave')
-                ax2.plot(yedge[1:len(yedge)],dist2t/norm_val,color='green',label='during wave')
-                ax2.plot(yedge[1:len(yedge)],dist3t/norm_val,color='blue',label='after wave')
-                ax2.legend()
-                #ax2.set_ylim([0,26])
-                ax2.set_title('t-hat')
-                ax2.set_ylabel('Normalized Counts Distribution')
-                ax2.set_xlabel('Bt/|B|')
-                ax2.set_adjustable('box')
-                
-                #ax3 = fig1.add_subplot(2,2,(2,1))
-                
-                ind_hist = []
-                data_hist = []
-                for o in n_b_data:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,125])
-                histo = np.transpose(histo)
-
-                k=0
-                dist1n = np.zeros(histo[:,0].shape)
-                while k < round(n_mag_bins/3): #distribution 1
-                    dist1n = dist1n + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_mag_bins/3)
-                dist2n = np.zeros(histo[:,0].shape)
-                while k >= round(n_mag_bins/3) and k < round(2*n_mag_bins/3): #distribution 2
-                    dist2n = dist2n + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_mag_bins/3)
-                dist3n = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_mag_bins/3) and k<n_mag_bins: #distribution 3
-                    dist3n = dist3n + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax3.set_aspect(1)
-                #ax3.set_adjustable('box')
-                norm_val = np.max(dist2n)
-                ax3.plot(yedge[1:len(yedge)],dist1n/norm_val,color='red',label='before wave')
-                ax3.plot(yedge[1:len(yedge)],dist2n/norm_val,color='green',label='during wave')
-                ax3.plot(yedge[1:len(yedge)],dist3n/norm_val,color='blue',label='after wave')
-                ax3.legend()
-                #ax3.set_ylim([0,34])
-                ax3.set_title('n-hat')
-                ax3.set_ylabel('Normalized Counts Distribution')
-                ax3.set_xlabel('Bn/|B|')
-                ax3.set_adjustable('box')
-                
-                #ax4 = fig1.add_subplot(2,2,(2,2))
-                
-                ind_hist = []
-                data_hist = []
-                for o in phi_def:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_mag_bins,125])
-                histo = np.transpose(histo)
-
-                k=0
-                dist1cos = np.zeros(histo[:,0].shape)
-                while k < round(n_mag_bins/3): #distribution 1
-                    dist1cos = dist1cos + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_mag_bins/3)
-                dist2cos = np.zeros(histo[:,0].shape)
-                while k >= round(n_mag_bins/3) and k < round(2*n_mag_bins/3): #distribution 2
-                    dist2cos = dist2cos + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_mag_bins/3)
-                dist3cos = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_mag_bins/3) and k<n_mag_bins: #distribution 3
-                    dist3cos = dist3cos + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax3.set_aspect(1)
-                #ax3.set_adjustable('box')
-                norm_val = np.max(dist2cos)
-                ax4.plot(yedge[1:len(yedge)],dist1cos/norm_val,color='red',label='before wave')
-                ax4.plot(yedge[1:len(yedge)],dist2cos/norm_val,color='green',label='during wave')
-                ax4.plot(yedge[1:len(yedge)],dist3cos/norm_val,color='blue',label='after wave')
-                ax4.legend()
-                ax4.set_xlim([-40,40])
-                #ax4.set_ylim([0,50])
-                ax4.set_title('Parker-Measurement Deflection Angle')
-                ax4.set_ylabel('Normalized Counts Distribution')
-                ax4.set_xlabel('θ degrees')
-                ax4.set_adjustable('box')
-                
-                
                 plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
                 plt.clf()
                 plt.cla()
@@ -748,7 +722,7 @@ def mag_epoch(plot='epoch',quick=True,no_enc_7=False, no_n_hat = False, win_len 
             
         i+=1
         
-def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10):
+def vel_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=False,resolution=10,wavelen=90):
 
     i=0
     enc_num = len(per_flt)
@@ -763,21 +737,24 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
         if not by_Rs:
             if i==0:
                 csv_filename = 'harmwave_master_arch.csv'
-                csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 if no_enc_7:
                     name = 'All Encounters sans 7'
                 else:
                     name = 'All Encounters'
             else:
                 csv_filename = 'enc_'+str(i)+'_harmwave_arch.csv'
-                csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                # csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/histograms/'
                 savename = 'Enc_'+str(i)+'_mag_epoch.png'
                 name = 'Encounter '+str(i)
         
         else:
             csv_filename = 'harmwave_master_arch.csv'
-            csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
             if i==0:
                 if no_enc_7:
                     name = 'All Radial Distances sans Enc 7'
@@ -793,7 +770,7 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             df = pd.read_csv(csv_path+csv_filename)
             bf = df.to_numpy()
 
-            af = np.delete(bf,bf[:,1]<90,0)
+            af = np.delete(bf,bf[:,1]<wavelen,0)
             
             if by_Rs and i !=0:
                 af = np.delete(af,af[:,2]>Rs_grps[i-1][0],0)
@@ -805,6 +782,22 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                     dates[j] = dates[j][0:4]
                 npdates = np.array(dates)
                 af = np.delete(af,npdates=='2021',0)
+                
+            if no_enc_1 and i != 1: #this portion of code kills events in encounter 1
+                dates = list(af[:,0])
+                for j in range(len(dates)):
+                    dates[j] = dates[j][0:4]
+                npdates = np.array(dates)
+                af = np.delete(af,npdates=='2018',0)
+            
+            
+            # dates = list(af[:,0])
+            # for j in range(len(dates)):
+            #     dates[j] = dates[j][0:10]
+            # npdates = np.array(dates)
+            # af = np.delete(af,npdates=='2019-04-03',0)
+            
+            
             
             wave_start = np.array(pys.time_float(af[:,0]))
             wave_end = np.array(wave_start+af[:,1])
@@ -822,6 +815,12 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             
             duration = np.array(af[:,1])
             
+            mag_time = []
+            mag_r_data = []
+            mag_t_data = []
+            mag_n_data = []
+            mag_b_data = []
+            
             vel_time = []
             vel_r_data = []
             vel_t_data = []
@@ -835,8 +834,12 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             
             r_wave_med = []
             t_wave_med = []
+            t_wave_mean = []
             n_wave_med = []
             mag_wave_med = []
+            
+            t_out_med = []
+            t_out_mean = []
             
             dens_time = []
             density_data = []
@@ -845,6 +848,7 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             
             vel_len_arr = []
             dens_len_arr = []
+            
             
             for j in range(len(uniq_dates)): #gather data for each day range(2):#
                 
@@ -863,13 +867,44 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                 dens_data_arr = dens_data[1]
                 
                 idlpath = '/Users/besh2109/Desktop/psp_processed_SPANi_data/'
-                idlfile = 'psp_spani_L3_rtn_sc_velocities_'+pys.time_string(date_flt[j],fmt='%Y_%m_%d')+'_00_00_00__20210614.sav'
+                idlfile = 'psp_spani_L3_rtn_sc_velocities_'+pys.time_string(date_flt[j],fmt='%Y_%m_%d')+'_00_00_00__20210806.sav'
+                #idlfile = 'psp_spani_L3_rtn_sc_velocities_'+pys.time_string(date_flt[j],fmt='%Y_%m_%d')+'_00_00_00__20210614.sav'
                 
                 vel_raw = readsav(idlpath+idlfile)
-                vel_data = vel_raw.psp_swp_spi_sf00_l3_vel_rtn
+                vel_data = vel_raw.psp_swp_spi_sf00_l3_vel_rtn_sun
+                #vel_data_1 = vel_raw.psp_swp_spi_sf00_l3_vel_rtn
+                #breakpoint()
                 
-                vel_time_arr = vel_data[0][0]
-                vel_data_arr = np.transpose(vel_data[0][1])
+                e1c = pys.time_float(uniq_dates[j])
+                # if e1c > enc_flt[0][0] and e1c < enc_flt[2][1]: #if encounter 1-3, use SPC
+                if e1c > enc_flt[0][0] and e1c < enc_flt[0][1]: #if encounter 1, use SPC
+                    enc1check = True
+                else:
+                    enc1check = False
+                
+                
+                if enc1check:
+                    pys.psp.spc(trange=[uniq_dates[j],uniq_next[j]], level='L3')
+                    vel_data = pyt.get_data('vp_fit_RTN')
+                    # print(vel_data)
+                    vel_time_arr = vel_data[0]
+                    # vel_data_arr = vel_data[1][:,0]
+                    vel_data_arr = vel_data[1]
+                    
+                else:
+                    vel_raw = readsav(idlpath+idlfile)
+                    vel_data = vel_raw.psp_swp_spi_sf00_l3_vel_rtn_sun
+                
+                    vel_time_arr = vel_data[0][0]
+                    vel_data_arr = np.transpose(vel_data[0][1])
+                
+                """ PSP mag data """
+                
+                pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True)
+                mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+                
+                mag_time_arr = mag_data[0]
+                mag_data_arr = mag_data[1]
                 
                 """ date management """
                 
@@ -886,7 +921,15 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                 
                 for k in range(len(win_start_tmp)): 
                     
+                    """ mag data """
+                    mag_where = np.where((mag_time_arr > win_start_tmp[k]) & (mag_time_arr < win_end_tmp[k]))
+                    mag_where = mag_where[0]
                     
+                    mag_time.append(mag_time_arr[mag_where])
+                    mag_r_data.append(mag_data_arr[mag_where,0])
+                    mag_t_data.append(mag_data_arr[mag_where,1])
+                    mag_n_data.append(mag_data_arr[mag_where,2])
+                    mag_b_data.append(np.sqrt(mag_data_arr[mag_where,0]**2+mag_data_arr[mag_where,1]**2+mag_data_arr[mag_where,0]**2))
                     
                     """ #bulk velocity data """
                     vel_where = np.where((vel_time_arr > win_start_tmp[k]) & (vel_time_arr < win_end_tmp[k]))
@@ -907,14 +950,26 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                     wave_where = np.where((vel_time_arr > wave_start_tmp[k]) & (vel_time_arr < wave_end_tmp[k]))
                     wave_where = wave_where[0]
                     
-                    r_wave_med.append(np.median(vel_data_arr[wave_where,0]))
-                    t_wave_med.append(np.median(vel_data_arr[wave_where,1]))
-                    n_wave_med.append(np.median(vel_data_arr[wave_where,2]))
-                    mag_wave_med.append(np.median(np.sqrt(vel_data_arr[wave_where,0]**2+vel_data_arr[wave_where,1]**2+vel_data_arr[wave_where,2]**2)))
+                    r_wave_med.append(np.nanmedian(vel_data_arr[wave_where,0]))
+                    t_wave_med.append(np.nanmedian(vel_data_arr[wave_where,1]))
+                    t_wave_mean.append(np.nanmean(vel_data_arr[wave_where,1]))
+                    n_wave_med.append(np.nanmedian(vel_data_arr[wave_where,2]))
+                    mag_wave_med.append(np.nanmedian(np.sqrt(vel_data_arr[wave_where,0]**2+vel_data_arr[wave_where,1]**2+vel_data_arr[wave_where,2]**2)))
+                    
+                    bef_where = np.where((vel_time_arr > win_start_tmp[k]) & (vel_time_arr < wave_start_tmp[k]))
+                    bef_where = bef_where[0]
+                    
+                    aft_where = np.where((vel_time_arr > wave_end_tmp[k]) & (vel_time_arr < win_end_tmp[k]))
+                    aft_where = aft_where[0]
+                    
+                    out_where = np.append(bef_where,aft_where)
+                    
+                    t_out_med.append(np.median(vel_data_arr[out_where,1]))
+                    t_out_mean.append(np.mean(vel_data_arr[out_where,1]))
                     
                     
                     """ #bulk density data """
-                    dens_where = np.where((dens_time_arr > win_start_tmp[k]) & (dens_time_arr < win_end_tmp[k]))
+                    dens_where = np.where((dens_time_arr > wave_start_tmp[k]) & (dens_time_arr < win_end_tmp[k]))
                     dens_where = dens_where[0]
                     
                     dens_ti = np.array(dens_time_arr[dens_where])
@@ -933,6 +988,9 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
 
                     r_km = np.sqrt(pos_data_arr[pos_where,0]**2+pos_data_arr[pos_where,1]**2+pos_data_arr[pos_where,2]**2)
                     r_data.append(r_km)
+                    
+
+                    
             
             
             vel_time_tmp = []
@@ -942,6 +1000,7 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             vel_mag_tmp = []
             vel_len_tmp = []
             vel_med_tmp = []
+            r_b_tmp = []
             for m in range(len(vel_len_arr)):
                 if vel_len_arr[m] >= resolution:
                     vel_time_tmp.append(vel_time[m])
@@ -950,12 +1009,14 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                     vel_n_tmp.append(vel_n_data[m])
                     vel_mag_tmp.append(vel_mag_data[m])
                     vel_len_tmp.append(vel_len_arr[m])
+                    r_b_tmp.append(mag_r_data[m]/mag_b_data[m])
             
             vel_time = list(vel_time_tmp)
             vel_r_data = list(vel_r_tmp)
             vel_t_data = list(vel_t_tmp)
             vel_n_data = list(vel_n_tmp)
             vel_len_arr = np.array(vel_len_tmp)
+            r_b = list(r_b_tmp)
             
             min_vel_len = min([num for num in vel_len_arr if num != 0])
             n_vel_bins = min_vel_len
@@ -964,6 +1025,31 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             r_v_data = []
             t_v_data = []
             n_v_data = []
+            
+            wave_mean_mean = np.mean(t_wave_mean)
+            wave_med_mean = np.median(t_wave_mean)
+            wave_mean_med = np.mean(t_wave_med)
+            wave_med_med = np.median(t_wave_med)
+            
+            out_mean_mean = np.mean(t_out_mean)
+            out_med_mean = np.median(t_out_mean)
+            out_mean_med = np.mean(t_out_med)
+            out_med_med = np.median(t_out_med)
+            
+            # print()
+            # print(str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+' Rs')
+            # print(wave_mean_mean,' mean of mean')
+            # print(wave_med_mean, ' median of mean')
+            # print(wave_mean_med, ' mean of median')
+            # print(wave_med_med, ' median of median')
+            # print()
+            # print(out_mean_mean,'out mean of mean')
+            # print(out_med_mean, 'out median of mean')
+            # print(out_mean_med, 'out mean of median')
+            # print(out_med_med, 'out median of median')
+            # print()
+            # time.sleep(5.5)
+            
             
             for l in range(len(vel_time)): #this block seeks to normalize all the magnetic field data 
                                            #to the length of the shortest window
@@ -979,19 +1065,33 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                     win_end = (m+1)*vel_bin_size
                     wind_where = np.where((vel_ind_arr>=win_str)&(vel_ind_arr<win_end))
                     wind_where = wind_where[0]
-                    vel_time_val_tmp = np.median(vel_time[l][wind_where])
-                    vel_r_val_tmp = np.median(vel_r_data[l][wind_where])
-                    vel_t_val_tmp = np.median(vel_t_data[l][wind_where])
-                    vel_n_val_tmp = np.median(vel_n_data[l][wind_where])
+                    vel_time_val_tmp = np.nanmedian(vel_time[l][wind_where])
+                    vel_r_val_tmp = np.nanmedian(vel_r_data[l][wind_where])
+                    vel_t_val_tmp = np.nanmedian(vel_t_data[l][wind_where])
+                    vel_n_val_tmp = np.nanmedian(vel_n_data[l][wind_where])
                     norm_vel_time[m] = vel_time_val_tmp
                     norm_vel_r_val[m] = vel_r_val_tmp
                     norm_vel_t_val[m] = vel_t_val_tmp
                     norm_vel_n_val[m] = vel_n_val_tmp
+
+                    
                 
                 v_mag = np.sqrt(norm_vel_r_val**2+norm_vel_t_val**2+norm_vel_n_val**2)
                 r_v = np.array(norm_vel_r_val/v_mag)
                 t_v = np.array(norm_vel_t_val/v_mag)
                 n_v = np.array(norm_vel_n_val/v_mag)
+                
+                # r_b = np.array()
+                                
+                # if np.median(r_b[l]) <= 0: #control for magnetic field polarity
+                #     r_v = -r_v
+                #     t_v = -t_v
+                #     n_v = -n_v
+                    
+                #     norm_vel_r_val = -norm_vel_r_val
+                #     norm_vel_t_val = -norm_vel_t_val
+                #     norm_vel_n_val = -norm_vel_n_val
+                
                 
                 vel_v_data.append(v_mag)
                 r_v_data.append(r_v)#mag_r/|B|
@@ -1010,146 +1110,128 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                 
             
             if plot=='epoch' or plot=='both':
-            
+                
+                
                 savepath = '/Users/besh2109/Desktop/PSP_epoch/vel_epoch/'
                     
                 if not by_Rs:
                     if i==0:
+                        savename = 'All_Events_vel_epoch.png'
                         if no_enc_7:
-                            savename = 'All_Events_no_7_vel_epoch.png'
-                        else:
-                            savename = 'All_Events_vel_epoch.png'      
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+                        nametmp = 'All Encounters'
                     else:
                         savename = 'Enc_'+str(i)+'_vel_epoch.png'
+                        nametmp = 'Encounter '+str(i)
+                        if no_enc_1:
+                            savename = 'Enc_'+str(i+1)+'_vel_epoch.png'
+                            nametmp = 'Encounter '+str(i+1)
                 else:
                     if i==0:
+                        savename = 'All_Events_vel_epoch.png'
                         if no_enc_7:
-                            savename = 'All_Events_no_7_vel_epoch.png'
-                        else:
-                            savename = 'All_Events_vel_epoch.png'       
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+                        nametmp = 'All Rs'
                     else:
                         savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_vel_epoch.png'
-                    
-                fis1 = plt.figure(figsize=(15,15))
-                axs1 = fis1.add_subplot(411)
+                        nametmp = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+' Rs'
                 
+                    
+                plt.rcParams['font.size']='20'
+                fis1 = plt.figure(figsize=(15,15))
+                #fis1.suptitle('Magnetic Field Unit Vector '+name, fontsize=16,y=0.92)
+                #r'$\frac{B_R}{|B|}$'
+                ylabs = [r'$\frac{V_R}{|V|}$',r'$\frac{V_T}{|V|}$',r'$\frac{V_N}{|V|}$','Magnitude of |V|']
+                datas = [r_v_data,t_v_data,n_v_data,vel_v_data]
+                
+                datamax = n_v_data
+                    
                 ind_hist = []
                 data_hist = []
-                for o in vel_r_data: #vel_r_data
+                ind_line = np.linspace(-win_len,win_len+1,len(datamax[0]))
+                median_line = np.median(np.array(datamax),0)
+                quart_line1 = np.quantile(np.array(datamax),0.25,axis=0)
+                quart_line2 = np.quantile(np.array(datamax),0.75,axis=0)
+                for o in datamax:
                     ind = list(range(len(o)))
                     data = list(o)
                     ind_hist = ind_hist + ind
                     data_hist = data_hist + data
                     #axs1.plot(o)
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
+                ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                max_hist_arr = np.array(data_hist)
+                histo,xedge,yedge = np.histogram2d(ind_hist_arr,max_hist_arr,bins=[n_vel_bins,40])
+                histomax = np.transpose(histo)
+                histomax[histomax==0]=np.nan
                 
-                            
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,75])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                r_color = axs1.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
+                for ii in range(4):
+
+                    axs = fis1.add_subplot(4,1,ii+1)
                 
-                #height = [-0.6,-0.6]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs1.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                axs1.set(title='vel_r, SPAN-I, normalized time')
-                #plt.title()
-                #plt.show()
-                box = axs1.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(r_color,cax=axColor, label='Counts')
-                #fis2 = plt.figure(figsize=(15,10))
-                axs2 = fis1.add_subplot(412)
+                    data1 = datas[ii]
+                    
+                    ind_hist = []
+                    data_hist = []
+                    ind_line = np.linspace(-win_len,win_len+1,len(data1[0]))
+                    median_line = np.median(np.array(data1),0)
+                    quart_line1 = np.quantile(np.array(data1),0.25,axis=0)
+                    quart_line2 = np.quantile(np.array(data1),0.75,axis=0)
+                    for o in data1:
+                        ind = list(range(len(o)))
+                        data = list(o)
+                        ind_hist = ind_hist + ind
+                        data_hist = data_hist + data
+                        #axs1.plot(o)
+                    ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                    data_hist_arr = np.array(data_hist)
+                    
+                                
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,40])
+                    histo = np.transpose(histo)
+                    histo[histo==0]=np.nan
+        
+                    #histo = np.log(histo)
+        
+                    r_color = axs.pcolormesh(xedge,yedge,histo, cmap='magma',vmax=np.nanmax(histo))  #,np.log10(histo)
+                    
+                    axs.plot(ind_line,median_line, color='darkturquoise',linewidth=3,label='Median')
+                    axs.plot(ind_line,quart_line1, color='seagreen',linewidth=3,label='1st quantile', linestyle='dashed')
+                    axs.plot(ind_line,quart_line2, color='seagreen',linewidth=3,label='3rd quantile', linestyle='dashed')
+                    
+                    axs.tick_params(axis='both', which='major')
+                    # axs.tick_params(axis='both', which='major', labelsize=16)
+                    if ii==0:
+                        axs.legend(loc=(1.12,0.55))
+                        #leg = axs.legend(bbox_to_anchor=(1.01,1), loc'upper left', borderaxespad=0)
+                    if ii!=3:
+                        axs.get_xaxis().set_ticks([])
+                        axs.set_ylabel(ylabs[ii],rotation=0,fontsize=32)
+                        axs.yaxis.set_label_coords(-0.085,0.5)
+                        axs.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+                    else:
+                        # axs.set_xlabel('Normalized Time',fontsize=18)
+                        axs.set_xlabel('Normalized Time')
+                        axs.set_ylabel(ylabs[ii])
+                        axs.yaxis.set_label_coords(-0.075,0.5)
+                    # axs.set_ylabel(ylabs[ii],fontsize=18)
+                    
+                    
+                    box = axs.get_position()
+                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+                    cbar = fis1.colorbar(r_color,cax=axColor)
+                    cbar.set_label(label='Counts')
+                    #cbar.set_label(label='Counts', size=16)
+                    #cbar.ax.tick_params(labelsize=14) 
                 
-                ind_hist = []
-                data_hist = []
-                for o in vel_t_data: #vel_t_data
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs2.plot(o)
-    
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,75])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                t_color = axs2.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
                 
-                box = axs2.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(t_color,cax=axColor, label='Counts')
+                plt.subplots_adjust(wspace=0, hspace=0.05)
+                # plt.show()
                 
-                #height = [0,0]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs2.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_t_data)+1)
-                axs2.set(title='vel_t, SPAN-I, normalized time')
-                #plt.title('mag_t first 73 waves, normalized time')
-                #plt.show()
-                
-                #fis3 = plt.figure(figsize=(15,10))
-                axs3 = fis1.add_subplot(413)
-                
-                ind_hist = []
-                data_hist = []
-                for o in vel_n_data: #vel_n_data
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs2.plot(o)
-                
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist) 
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,75]) 
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                n_color = axs3.pcolormesh(xedge,yedge,histo,cmap='jet')  #,np.log10(histo)
-                
-                box = axs3.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(n_color,cax=axColor, label='Counts')
-                
-                #height = [0,0]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs3.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_n_data)+1)
-                axs3.set(title='vel_n, SPAN-I, normalized time')
-                #plt.title('mag_n first 73 waves, normalized time')
-                
-                axs4 = fis1.add_subplot(414)
-                
-                ind_hist = []
-                data_hist = []
-                for o in vel_v_data:
-                    ind = list(range(len(o)))
-                    data = list(o)#np.arccos(o)) #convert to deflection angle
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs2.plot(o)
-                
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist) 
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,75]) 
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                n_color = axs4.pcolormesh(xedge,yedge,histo,cmap='jet')  #,np.log10(histo)
-                
-                box = axs4.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(n_color,cax=axColor, label='Counts')
-                
-                #height = [0,0]
-                #endpoints = [n_mag_bins/3+30,2*n_mag_bins/3-30]
-                #axs4.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_n_data)+1)
-                axs4.set(title='v_mag, SPAN-I, normalized time')
+                # breakpoint()
                 
                 plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
                 plt.clf()
@@ -1179,201 +1261,100 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
                     else:
                         savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_vel_dist.png'
                 
+                plt.rcParams['font.size']='20'
                 fig1 = plt.figure(figsize=(15,15))
-                fig1.suptitle('Velocity components minus median value '+name, fontsize=16,y=0.92)
-                ax1 = fig1.add_subplot(221)
-                ax2 = fig1.add_subplot(222)
-                ax3 = fig1.add_subplot(223)
-                ax4 = fig1.add_subplot(224)
+                #fig1.suptitle('Magnetic Field Unit Vector Distributions '+name, fontsize=16,y=0.92)
+            
+                xlabs = [r'$\frac{V_R}{|V|}$',r'$\frac{V_T}{|V|}$',r'$\frac{V_N}{|V|}$','|V|']
+                titles = [r'${\hat{R}}$ Unit Vector',r'${\hat{T}}$ Unit Vector',r'${\hat{N}}$ Unit Vector','Parker-Measurement Deflection Angle']
+                datas = [r_v_data,t_v_data,n_v_data,vel_v_data]
                 
-                ind_hist = []
-                data_hist = []
-                for o in vel_r_med:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
                 
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,125])
-                histo = np.transpose(histo)
+                for ii in range(4):
 
-                k=0
-                dist1r = np.zeros(histo[:,0].shape)
-                while k < round(n_vel_bins/3): #distribution 1
-                    dist1r = dist1r + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_vel_bins/3)
-                dist2r = np.zeros(histo[:,0].shape)
-                while k >= round(n_vel_bins/3) and k < round(2*n_vel_bins/3): #distribution 2
-                    dist2r = dist2r + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_vel_bins/3)
-                dist3r = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_vel_bins/3) and k<n_vel_bins: #distribution 3
-                    dist3r = dist3r + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
+                    axs = fig1.add_subplot(2,2,ii+1)
                 
-                #ax1.set_aspect(1)
-                #ax1.set_adjustable('box')
-                norm_val = np.max(dist2r)
-                ax1.plot(yedge[1:len(yedge)],dist1r/norm_val,color='red',label='before wave')
-                ax1.plot(yedge[1:len(yedge)],dist2r/norm_val,color='green',label='during wave')
-                ax1.plot(yedge[1:len(yedge)],dist3r/norm_val,color='blue',label='after wave')
-                ax1.legend()
-                #ax1.set_ylim([0,120])
-                ax1.set_xlim([-50,50])
-                ax1.set_title('r-component of velocity')
-                ax1.set_ylabel('Normalized Counts Distribution')
-                ax1.set_xlabel('km/s')
-                ax1.set_adjustable('box')
-                #ax1.set_xlim(-25,25)
+                    data1 = datas[ii]
+                    
+                    ind_hist = []
+                    data_hist = []
+                    for o in data1:
+                        ind = list(range(len(o)))
+                        data = list(o) #- np.median(o))
+                        ind_hist = ind_hist + ind
+                        data_hist = data_hist + data
+                    ind_hist_arr = np.array(ind_hist)
+                    data_hist_arr = np.array(data_hist)
+                        
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,125])
+                    histo = np.transpose(histo)
+    
+                    k=0
+                    dist1r = np.zeros(histo[:,0].shape)
+                    while k < round(n_vel_bins/3): #distribution 1
+                        dist1r = dist1r + histo[:,k]#/np.sum(histo[:,k])
+                        k+=1
+    
+                    k=round(n_vel_bins/3)
+                    dist2r = np.zeros(histo[:,0].shape)
+                    while k >= round(n_vel_bins/3) and k < round(2*n_vel_bins/3): #distribution 2
+                        dist2r = dist2r + histo[:,k]#/np.sum(histo[:,k])
+                        k+=1
+    
+                    k=round(2*n_vel_bins/3)
+                    dist3r = np.zeros(histo[:,0].shape)
+                    while k >= round(2*n_vel_bins/3) and k<n_vel_bins: #distribution 3
+                        dist3r = dist3r + histo[:,k]#/np.sum(histo[:,k])
+                        k+=1
+                    
+                    #ax1.set_aspect(1)
+                    #ax1.set_adjustable('box')
+                    norm_val = np.max(dist2r) 
+                    norm1 = np.sum(dist1r)
+                    norm2 = np.sum(dist2r)
+                    norm3 = np.sum(dist3r)
+                    norm_val = np.max(dist2r/norm2)
+                    axs.plot(yedge[1:len(yedge)],(dist1r/norm1)/norm_val,color='red',label='before region')
+                    axs.plot(yedge[1:len(yedge)],(dist2r/norm2)/norm_val,color='green',label='during region')
+                    axs.plot(yedge[1:len(yedge)],(dist3r/norm3)/norm_val,color='blue',label='after region')
+                    
+                    axs.set_ylim([-0.1,1.15])
+                    
+                    if ii==0:    
+                        axs.legend(loc='center left')
+                        #axs.text(0.78, -0.02, r'$\frac{B_R}{|B|}$',fontsize=30)
+                        axs.text(0.94, 1.05, r'${\hat{R}}$ component of ${\hat{V}}$',fontsize=22)
+                        #axs.set_xlim([0.8,1.05])
+                    if ii==1:
+                        
+                        #axs.text(-0.04, -0.02, r'$\frac{B_T}{|B|}$',fontsize=30)
+                        axs.text(-0.19, 1.05, r'${\hat{T}}$ component of ${\hat{V}}$',fontsize=22)
+                        axs.set_xlim([-0.23,0.20])
+                    if ii==2:
+                        #axs.text(-0.04, -0.02, r'$\frac{B_N}{|B|}$',fontsize=30)
+                        axs.text(-0.15, 1.05, r'${\hat{N}}$ component of ${\hat{V}}$',fontsize=22)
+                        axs.set_xlim([-0.20,0.20])
+                    if ii == 3:
+                        #axs.text(-10, -0.05, 'Degrees',fontsize=22)
+                        axs.text(250, 1.07, 'Magnitude of V',fontsize=21)
+                        #axs.set_xlim([-50,50])
+                    if ii in [1,3]:
+                        axs.get_yaxis().set_ticks([])
+                    if ii in [0,2]:
+                        axs.set_ylabel('Normalized Counts Distribution')
+                    # if ii in [0,1]:
+                    #     axs.set_title(titles[ii])
+                    # if ii in [2,3]:
+                    #     axs.set_xlabel(xlabs[ii])
+                    #ax1.set_ylim([0,120])
+                    if ii in [0,1,2]:
+                        axs.set_xlabel(xlabs[ii],fontsize=26)
+                    else:
+                        axs.set_xlabel(xlabs[ii])
+                    axs.set_adjustable('box')
                 
-                #ax2 = fig1.add_subplot(2,2,(1,2))
                 
-                ind_hist = []
-                data_hist = []
-                for o in vel_t_med:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,125])
-                histo = np.transpose(histo)
-                
-                
-
-                k=0
-                dist1t = np.zeros(histo[:,0].shape)
-                while k < round(n_vel_bins/3): #distribution 1
-                    dist1t = dist1t + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_vel_bins/3)
-                dist2t = np.zeros(histo[:,0].shape)
-                while k >= round(n_vel_bins/3) and k < round(2*n_vel_bins/3): #distribution 2
-                    dist2t = dist2t + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_vel_bins/3)
-                dist3t = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_vel_bins/3) and k<n_vel_bins: #distribution 3
-                    dist3t = dist3t + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax2.set_aspect(1)
-                #ax2.set_adjustable('box')
-                norm_val = np.max(dist2t)
-                ax2.plot(yedge[1:len(yedge)],dist1t/norm_val,color='red',label='before wave')
-                ax2.plot(yedge[1:len(yedge)],dist2t/norm_val,color='green',label='during wave')
-                ax2.plot(yedge[1:len(yedge)],dist3t/norm_val,color='blue',label='after wave')
-                ax2.legend()
-                #ax2.set_ylim([0,26])
-                ax2.set_xlim([-50,50])
-                ax2.set_title('t-component of velocity')
-                ax2.set_ylabel('Normalized Counts Distribution')
-                ax2.set_xlabel('km/s|')
-                ax2.set_adjustable('box')
-                
-                #ax3 = fig1.add_subplot(2,2,(2,1))
-                
-                ind_hist = []
-                data_hist = []
-                for o in vel_n_med:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,125])
-                histo = np.transpose(histo)
-
-                k=0
-                dist1n = np.zeros(histo[:,0].shape)
-                while k < round(n_vel_bins/3): #distribution 1
-                    dist1n = dist1n + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_vel_bins/3)
-                dist2n = np.zeros(histo[:,0].shape)
-                while k >= round(n_vel_bins/3) and k < round(2*n_vel_bins/3): #distribution 2
-                    dist2n = dist2n + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_vel_bins/3)
-                dist3n = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_vel_bins/3) and k<n_vel_bins: #distribution 3
-                    dist3n = dist3n + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax3.set_aspect(1)
-                #ax3.set_adjustable('box')
-                norm_val = np.max(dist2n)
-                ax3.plot(yedge[1:len(yedge)],dist1n/norm_val,color='red',label='before wave')
-                ax3.plot(yedge[1:len(yedge)],dist2n/norm_val,color='green',label='during wave')
-                ax3.plot(yedge[1:len(yedge)],dist3n/norm_val,color='blue',label='after wave')
-                ax3.legend()
-                ax3.set_xlim([-50,50])
-                #ax3.set_ylim([0,34])
-                ax3.set_title('n-component of velocity')
-                ax3.set_ylabel('Normalized Counts Distribution')
-                ax3.set_xlabel('km/s')
-                ax3.set_adjustable('box')
-                
-                #ax4 = fig1.add_subplot(2,2,(2,2))
-                
-                ind_hist = []
-                data_hist = []
-                for o in vel_mag_med:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_vel_bins,125])
-                histo = np.transpose(histo)
-
-                k=0
-                dist1cos = np.zeros(histo[:,0].shape)
-                while k < round(n_vel_bins/3): #distribution 1
-                    dist1cos = dist1cos + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_vel_bins/3)
-                dist2cos = np.zeros(histo[:,0].shape)
-                while k >= round(n_vel_bins/3) and k < round(2*n_vel_bins/3): #distribution 2
-                    dist2cos = dist2cos + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_vel_bins/3)
-                dist3cos = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_vel_bins/3) and k<n_vel_bins: #distribution 3
-                    dist3cos = dist3cos + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax3.set_aspect(1)
-                #ax3.set_adjustable('box')
-                norm_val = np.max(dist2cos)
-                ax4.plot(yedge[1:len(yedge)],dist1cos/norm_val,color='red',label='before wave')
-                ax4.plot(yedge[1:len(yedge)],dist2cos/norm_val,color='green',label='during wave')
-                ax4.plot(yedge[1:len(yedge)],dist3cos/norm_val,color='blue',label='after wave')
-                ax4.legend()
-                ax4.set_xlim([-50,50])
-                #ax4.set_ylim([0,50])
-                ax4.set_title('Velocity Magnitude minus median value')
-                ax4.set_ylabel('Normalized Counts Distribution')
-                ax4.set_xlabel('km/s')
-                ax4.set_adjustable('box')
+                plt.subplots_adjust(wspace=0.04, hspace=0.22)
                 
                 
                 plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
@@ -1384,7 +1365,7 @@ def vel_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False,resolution=10)
             
         i+=1
 
-def spec_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False, norm_freq='fce'):
+def spec_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False, norm_freq='fce',wavelen=90):
 
     i=0
     enc_num = len(per_flt)
@@ -1405,21 +1386,24 @@ def spec_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False, norm_freq='f
         if not by_Rs:
             if i==0:
                 csv_filename = 'harmwave_master_arch.csv'
-                csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 if no_enc_7:
                     name = 'All Encounters sans 7'
                 else:
                     name = 'All Encounters'
             else:
                 csv_filename = 'enc_'+str(i)+'_harmwave_arch.csv'
-                csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                # csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/histograms/'
                 savename = 'Enc_'+str(i)+'_mag_epoch.png'
                 name = 'Encounter '+str(i)
         
         else:
             csv_filename = 'harmwave_master_arch.csv'
-            csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
             if i==0:
                 if no_enc_7:
                     name = 'All Radial Distances sans Enc 7'
@@ -1435,7 +1419,7 @@ def spec_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False, norm_freq='f
             df = pd.read_csv(csv_path+csv_filename)
             bf = df.to_numpy()
 
-            af = np.delete(bf,bf[:,1]<90,0)
+            af = np.delete(bf,bf[:,1]<wavelen,0)
             
             if by_Rs and i !=0:
                 af = np.delete(af,af[:,2]>Rs_grps[i-1][0],0)
@@ -1780,7 +1764,7 @@ def spec_epoch(plot='epoch',no_enc_7=False, win_len=1, by_Rs=False, norm_freq='f
                 pass
         i+=1
         
-def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=False):
+def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1,resolution=10, by_Rs=False,wavelen=90):
     
     i=0
     
@@ -1799,7 +1783,8 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
         if not by_Rs:
             if i==0:
                 csv_filename = 'harmwave_master_arch.csv'
-                csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 if no_enc_7:
                     name = 'All Encounters sans 7'
                 elif no_enc_1:
@@ -1808,14 +1793,16 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                     name = 'All Encounters'
             else:
                 csv_filename = 'enc_'+str(i)+'_harmwave_arch.csv'
-                csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                # csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/histograms/'
                 savename = 'Enc_'+str(i)+'_mag_epoch.png'
                 name = 'Encounter '+str(i)
         
         else:
             csv_filename = 'harmwave_master_arch.csv'
-            csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
             if i==0:
                 if no_enc_7:
                     name = 'All Radial Distances sans Enc 7'
@@ -1833,7 +1820,9 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
             df = pd.read_csv(csv_path+csv_filename)
             bf = df.to_numpy()
 
-            af = np.delete(bf,bf[:,1]<90,0)
+            af = np.delete(bf,bf[:,1]<wavelen,0)
+            
+            #print(af.shape)
             
             if by_Rs and i !=0:
                 af = np.delete(af,af[:,2]>Rs_grps[i-1][0],0)
@@ -1879,6 +1868,10 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
             density_data = []
             dens_len_arr = []
             
+            alp_time = []
+            alpha_data = []
+            alp_len_arr = []
+            
             tens_time = []
             tens_sc_data = [] #tensor in sc coords
             
@@ -1910,70 +1903,105 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
             for j in range(len(uniq_dates)): #gather data for each day range(2):#
 
                 """ PSP Positional data """
-                pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='ephem_eclipj2000', level='l1') #going to be used to plot parker position
-                pos_data = pyt.get_data('position')
+                # pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='ephem_eclipj2000', level='l1') #going to be used to plot parker position
+                # pos_data = pyt.get_data('position')
 
-                pos_time_arr = pos_data[0]
-                pos_data_arr = pos_data[1]
+                # pos_time_arr = pos_data[0]
+                # pos_data_arr = pos_data[1]
                 
                 """ PSP ion data """
                 
                 date_form_1 = pys.time_string(date_flt[j],fmt='/%Y/%m/')
                 date_form_2 = pys.time_string(date_flt[j],fmt='%Y%m%d')
-                rot_path = '/Users/besh2109/spedas_data/psp/data/sci/sweap/spi/L3/spi_sf00'+date_form_1
-                rot_file = 'psp_swp_spi_sf00_L3_mom_INST_'+date_form_2+'_v02.cdf' 
+                # rot_path = '/Users/besh2109/spedas_data/psp/data/sci/sweap/spi/l3/spi_sf00'+date_form_1
+                # rot_file = 'psp_swp_spi_sf00_L3_mom_INST_'+date_form_2+'_v03.cdf' 
+                rot_path = '/Users/besh2109/spedas_data/psp/sweap/spi/L3/spi_sf00'+date_form_1
+                rot_file = 'psp_swp_spi_sf00_L3_mom_INST_'+date_form_2+'_v04.cdf' 
                 
-                if os.path.isfile(rot_path+rot_file):
-                    pyt.cdf_to_tplot(rot_path+rot_file)
-                else:
-                    pys.psp.spi(trange=[uniq_dates[j],uniq_next[j]], datatype='spi_sf00', level='L3')
+                # if os.path.isfile(rot_path+rot_file):
+                #     pyt.cdf_to_tplot(rot_path+rot_file)
+                # else:
+                #     pys.psp.spi(trange=[uniq_dates[j],uniq_next[j]], datatype='spi_sf00', level='L3')
+                
+                pys.psp.spi(trange=[uniq_dates[j],uniq_next[j]], datatype='spi_sf00', level='L3')
+                
+                # breakpoint()
                 
                 temp_data = pyt.get_data('TEMP')
                 
                 temp_time_arr = temp_data[0]
                 temp_data_arr = temp_data[1]
                 
-                tens_data = pyt.get_data('T_TENSOR')
+                # tens_data = pyt.get_data('T_TENSOR')
+                tens_data = pyt.get_data('T_TENSOR_INST')
                 
                 tens_time_arr = tens_data[0]
                 tens_data_arr = tens_data[1]
                 
-                rot_cdf = cdflib.CDF(rot_path+rot_file)
+                # rot_cdf = cdflib.CDF(rot_path+rot_file)
                 
-                rot_mat_ins_sc = rot_cdf.varget('ROTMAT_SC_INST')
-                rot_mat_ins_sc_inv = inv(rot_mat_ins_sc)
+                # breakpoint()
+                
+                # rot_mat_ins_sc = inv(rot_cdf.varget('ROTMAT_SC_INST')) #inverse of ROTMAT_SC_INST takes us FROM inst TO s/c
+                # rot_mat_ins_sc_inv = inv(rot_mat_ins_sc)
                 
                 dens_data = pyt.get_data('DENS')
                 
                 dens_time_arr = dens_data[0]
                 dens_data_arr = dens_data[1]
                 
-                """ PSP electron data """
+                pys.psp.spi(trange=[uniq_dates[j],uniq_next[j]], datatype='spi_sf01', level='L3')
                 
-                pys.psp.spe(trange=[uniq_dates[j],uniq_next[j]], datatype='spe_sf0_pad', level='L3')
+                alp_data = pyt.get_data('DENS')
                 
-                pa_data = pyt.get_data('EFLUX_VS_PA_E')
+                alp_time_arr = alp_data[0]
+                alp_data_arr = alp_data[1]
                 
-                pa_time_arr = pa_data[0]
-                pa_data_arr = pa_data[1]
-                pa_angle_arr = pa_data[2]
-                pa_energy_arr = pa_data[3]
+                # """ PSP electron data """
                 
-                ener = 10 #which energy bin to plot for pitch angle
+                # pys.psp.spe(trange=[uniq_dates[j],uniq_next[j]], datatype='spe_sf0_pad', level='L3')
                 
-                pa_data_arr = np.transpose(pa_data_arr[:,:,ener])
-                pa_angle_arr = np.transpose(pa_angle_arr)
-                pa_angle_lst = pa_angle_arr[:,0]
+                # pa_data = pyt.get_data('EFLUX_VS_PA_E')
+                # print(pa_data)
+                # pa_time_arr = pa_data[0]
+                # pa_data_arr = pa_data[1]
+                # pa_angle_arr = pa_data[2]
+                # pa_energy_arr = pa_data[3]
                 
-                energy = pa_energy_arr[0,ener]
+                # ener = 10 #which energy bin to plot for pitch angle
+                
+                # pa_data_arr = np.transpose(pa_data_arr[:,:,ener])
+                # pa_angle_arr = np.transpose(pa_angle_arr)
+                # pa_angle_lst = pa_angle_arr[:,0]
+                
+                # energy = pa_energy_arr[0,ener]
 
                 """ magnetic field data """
-                pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='mag_SC_4_Sa_per_Cyc', level='l2', last_version=True) #magnetic field, this time in SC coords
+                #pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='mag_SC_4_Sa_per_Cyc', level='l2', last_version=True) #magnetic field, this time in SC coords
                 
-                mag_data = pyt.get_data('psp_fld_l2_mag_SC_4_Sa_per_Cyc')
+                #mag_data = pyt.get_data('psp_fld_l2_mag_SC_4_Sa_per_Cyc')
+                mag_data = pyt.get_data('MAGF_INST')
                 
                 mag_time_arr = mag_data[0]
                 mag_data_arr = mag_data[1]
+                
+                # print(len(tens_time_arr))
+                # print(len(mag_time_arr))
+                # print(mag_time_arr[0:5])
+                
+                mag_time_x = np.array(range(len(tens_time_arr)))/2
+                mag_time_xp = np.array(range(len(mag_time_arr)))
+                
+                # print(mag_time_xp.shape,mag_time_arr.shape)
+                
+                mag_time_arr = np.interp(mag_time_x,mag_time_xp,mag_time_arr)
+   
+                mag_data_arr_x = np.interp(mag_time_x,mag_time_xp,mag_data_arr[:,0])
+                mag_data_arr_y = np.interp(mag_time_x,mag_time_xp,mag_data_arr[:,1])
+                mag_data_arr_z = np.interp(mag_time_x,mag_time_xp,mag_data_arr[:,2])
+                
+                mag_data_arr = np.transpose([mag_data_arr_x,mag_data_arr_y,mag_data_arr_z])
+
 
                 """ date management """
                 
@@ -2016,8 +2044,9 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                         
                         tens_tmp = np.array([[Txx,Txy,Txz],[Txy,Tyy,Tyz],[Txz,Tyz,Tzz]])
                         
-                        tens_tmp_1 = np.dot(rot_mat_ins_sc,tens_tmp)
-                        tensor.append(np.dot(tens_tmp_1,rot_mat_ins_sc_inv))
+                        # tens_tmp_1 = np.matmul(rot_mat_ins_sc,tens_tmp)
+                        # tensor.append(np.matmul(tens_tmp_1,rot_mat_ins_sc_inv))
+                        tensor.append(tens_tmp)
 
                     tensor = np.array(tensor)
                     tens_time.append(tens_ti)
@@ -2041,8 +2070,9 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                         
                         tens_tmp = np.array([[Txx,Txy,Txz],[Txy,Tyy,Tyz],[Txz,Tyz,Tzz]])
                         
-                        tens_tmp_1 = np.dot(rot_mat_ins_sc,tens_tmp)
-                        beftens.append(np.dot(tens_tmp_1,rot_mat_ins_sc_inv))
+                        # tens_tmp_1 = np.matmul(rot_mat_ins_sc,tens_tmp)
+                        # beftens.append(np.matmul(tens_tmp_1,rot_mat_ins_sc_inv))
+                        beftens.append(tens_tmp)
                         
                     beftens = np.array(beftens)
                     beftens_sc_data.append(beftens)
@@ -2065,8 +2095,9 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                         
                         tens_tmp = np.array([[Txx,Txy,Txz],[Txy,Tyy,Tyz],[Txz,Tyz,Tzz]])
                         
-                        tens_tmp_1 = np.dot(rot_mat_ins_sc,tens_tmp)
-                        durtens.append(np.dot(tens_tmp_1,rot_mat_ins_sc_inv))
+                        # tens_tmp_1 = np.matmul(rot_mat_ins_sc,tens_tmp)
+                        # durtens.append(np.matmul(tens_tmp_1,rot_mat_ins_sc_inv))
+                        durtens.append(tens_tmp)
 
                     durtens = np.array(durtens)
                     durtens_sc_data.append(durtens)
@@ -2089,8 +2120,9 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                         
                         tens_tmp = np.array([[Txx,Txy,Txz],[Txy,Tyy,Tyz],[Txz,Tyz,Tzz]])
                         
-                        tens_tmp_1 = np.dot(rot_mat_ins_sc,tens_tmp)
-                        afttens.append(np.dot(tens_tmp_1,rot_mat_ins_sc_inv))
+                        # tens_tmp_1 = np.matmul(rot_mat_ins_sc,tens_tmp)
+                        # afttens.append(np.matmul(tens_tmp_1,rot_mat_ins_sc_inv))
+                        afttens.append(tens_tmp)
         
                     afttens = np.array(afttens)
                     afttens_sc_data.append(afttens)
@@ -2106,28 +2138,39 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                     density_data.append(dens)
                     dens_len_arr.append(len(dens_ti))
                     
-                    """ pitch angle data """
-                    pa_where = np.where((pa_time_arr > win_start_tmp[k]) & (pa_time_arr < win_end_tmp[k]))
-                    pa_where = pa_where[0]
+                    """ alpha density data """
+                    alp_where = np.where((alp_time_arr > win_start_tmp[k]) & (alp_time_arr < win_end_tmp[k]))
+                    alp_where = alp_where[0]
                     
-                    pa_ti = np.array(pa_time_arr[pa_where])
-                    pa_data_tmp = np.array(pa_data_arr[:,pa_where])
-                    pa_angle_tmp = np.array(pa_angle_arr[:,pa_where[0]])
+                    alp_ti = np.array(alp_time_arr[alp_where])
+                    alpha = np.array(alp_data_arr[alp_where]) #1/cm^3
                     
-                    pa_time.append(pa_ti)
-                    pa_spec.append(pa_data_tmp)
-                    pa_angle.append(pa_angle_tmp)
-                    pa_len_arr.append(len(pa_ti))
+                    alp_time.append(alp_ti)
+                    alpha_data.append(alpha)
+                    alp_len_arr.append(len(alp_ti))
+                    
+                    # """ pitch angle data """
+                    # pa_where = np.where((pa_time_arr > win_start_tmp[k]) & (pa_time_arr < win_end_tmp[k]))
+                    # pa_where = pa_where[0]
+                    
+                    # pa_ti = np.array(pa_time_arr[pa_where])
+                    # pa_data_tmp = np.array(pa_data_arr[:,pa_where])
+                    # pa_angle_tmp = np.array(pa_angle_arr[:,pa_where[0]])
+                    
+                    # pa_time.append(pa_ti)
+                    # pa_spec.append(pa_data_tmp)
+                    # pa_angle.append(pa_angle_tmp)
+                    # pa_len_arr.append(len(pa_ti))
             
                     """ #position data """
                     
-                    wave_center = (win_end_tmp[k]+win_start_tmp[k])/2
-                    time_dif = np.array(abs(pos_time_arr-wave_center))
-                    pos_where = np.where(time_dif == min(time_dif))
-                    pos_where = pos_where[0][0]
+                    # wave_center = (win_end_tmp[k]+win_start_tmp[k])/2
+                    # time_dif = np.array(abs(pos_time_arr-wave_center))
+                    # pos_where = np.where(time_dif == min(time_dif))
+                    # pos_where = pos_where[0][0]
 
-                    r_km = np.sqrt(pos_data_arr[pos_where,0]**2+pos_data_arr[pos_where,1]**2+pos_data_arr[pos_where,2]**2)
-                    r_data.append(r_km)
+                    # r_km = np.sqrt(pos_data_arr[pos_where,0]**2+pos_data_arr[pos_where,1]**2+pos_data_arr[pos_where,2]**2)
+                    # r_data.append(r_km)
             
                     """ #magnetic field data """
                     mag_where = np.where((mag_time_arr > win_start_tmp[k]) & (mag_time_arr < win_end_tmp[k]))
@@ -2152,15 +2195,66 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                     
                     aft_time.append(aft_ti)
                     aft_len_arr.append(len(aft_ti))
+                    
+                    # print(len(temp_where))
+                    # print(len(mag_where))
+                    
+                    # yeet
+            
+            
+            time_tmp = []
+            temp_data_tmp = []
+            tens_data_tmp = []
+            dens_data_tmp = []
+            alp_data_tmp = []
+            alp_len_tmp = []
+            mag_time_tmp = []
+            mag_scx_tmp = []
+            mag_scy_tmp = []
+            mag_scz_tmp = []
+            mag_len_tmp = []
+            temp_len_tmp = []
+            
+            for m in range(len(temp_len_arr)):
+                if temp_len_arr[m] >= resolution:
+                    time_tmp.append(temp_time[m])
+                    temp_data_tmp.append(temperature_data[m])
+                    tens_data_tmp.append(tens_sc_data[m])
+                    dens_data_tmp.append(density_data[m])
+                    alp_data_tmp.append(alpha_data[m])
+                    alp_len_tmp.append(alp_len_arr[m])
+                    mag_time_tmp.append(mag_time[m])
+                    mag_scx_tmp.append(mag_scx_data[m])
+                    mag_scy_tmp.append(mag_scy_data[m])
+                    mag_scz_tmp.append(mag_scz_data[m])
+                    mag_len_tmp.append(mag_len_arr[m])
+                    temp_len_tmp.append(temp_len_arr[m])
+            
+            temp_time = list(time_tmp)
+            temperature_data = list(temp_data_tmp)
+            tens_sc_data = list(tens_data_tmp)
+            density_data = list(dens_data_tmp)
+            alpha_data = list(alpha_data)
+            alp_len_arr = np.array(alp_len_tmp)
+            mag_time = list(mag_time_tmp)
+            mag_scx_data = list(mag_scx_tmp)
+            mag_scy_data = list(mag_scy_tmp)
+            mag_scz_data = list(mag_scz_tmp)
+            mag_len_arr = np.array(mag_len_tmp)
+            temp_len_arr = np.array(temp_len_tmp)
+            
             
             min_temp_len = min(temp_len_arr)
             n_temp_bins = int(min_temp_len)
   
-            min_pa_len = min(pa_len_arr)
-            pa_bins = min_pa_len
+            # min_pa_len = min(pa_len_arr)
+            # pa_bins = min_pa_len
             
             min_mag_len = min(mag_len_arr) #minimum length of mag data
             n_mag_bins = int(min_mag_len)
+            
+            min_alp_len = min(alp_len_arr)
+            n_alp_bins = int(min_alp_len)
             
             mag_b_data = []
             rot_mat_sc_fa_lst = []
@@ -2168,9 +2262,12 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
             
             t_tensor_FA_coords = []
             
+            T_perp_n = []
+            T_par_n = []
             T_perp_I = []
             T_par_I = []
             T_anis_I = []
+            T_anis_david = []
             Beta_par_I = []
             
             T_anis_bef = []
@@ -2188,492 +2285,415 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
             T_anis_bef_med = []
             T_anis_dur_med = []
             T_anis_aft_med = []
+
             
             for l in range(len(temp_time)): #this block seeks to normalize all the magnetic field data 
                                            #to the length of the shortest window
+                if len(mag_scx_data[l])!=0:        
 
-                temp_bin_size = temp_len_arr[l]/n_temp_bins
-                temp_ind_arr = np.arange(temp_len_arr[l])
-                norm_temp_time = np.zeros((n_temp_bins,))
-                norm_temp_val = np.zeros((n_temp_bins,))
-                norm_tens_time = np.zeros((n_temp_bins,))
-                norm_tens_val = np.zeros((n_temp_bins,3,3))
-                norm_dens_val = np.zeros((n_temp_bins,))
-
-                rot_mat_sc_fa = []
-                rot_mat_inv = []
-                
-                bin_size = mag_len_arr[l]/n_temp_bins
-                ind_arr = np.arange(mag_len_arr[l])
-                norm_mag_time = np.zeros((n_temp_bins,))
-                norm_mag_scx_val = np.zeros((n_temp_bins,))
-                norm_mag_scy_val = np.zeros((n_temp_bins,))
-                norm_mag_scz_val = np.zeros((n_temp_bins,))
-                
-                tens_fa = []
-                
-                for m in range(n_temp_bins):
-                    
-                    win_str = m*temp_bin_size
-                    win_end = (m+1)*temp_bin_size
-                    wind_where = np.where((temp_ind_arr>=win_str)&(temp_ind_arr<win_end))
-                    wind_where = wind_where[0]
-                    temp_time_val_tmp = np.median(temp_time[l][wind_where])
-                    temp_val_tmp = np.median(temperature_data[l][wind_where])
-                    dens_val_tmp = np.median(density_data[l][wind_where])
-                    tens_val_tmp = np.median(tens_sc_data[l][wind_where,:,:],axis=0)
-                    
-                    norm_temp_time[m] = temp_time_val_tmp
-                    norm_temp_val[m] = temp_val_tmp
-                    
-                    norm_dens_val[m] = dens_val_tmp
-                    
-                    norm_tens_time[m] = temp_time_val_tmp
-                    norm_tens_val[m] = tens_val_tmp
-                    
-                    
-                    win_str_mag = m*bin_size
-                    win_end_mag = (m+1)*bin_size
-                    wind_where = np.where((ind_arr>=win_str_mag)&(ind_arr<win_end_mag))
-                    wind_where = wind_where[0]
-                    mag_time_val_tmp = np.median(mag_time[l][wind_where])
-                    mag_scx_val_tmp = np.median(mag_scx_data[l][wind_where])
-                    mag_scy_val_tmp = np.median(mag_scy_data[l][wind_where])
-                    mag_scz_val_tmp = np.median(mag_scz_data[l][wind_where])
-                    norm_mag_time[m] = mag_time_val_tmp
-                    norm_mag_scx_val[m] = mag_scx_val_tmp
-                    norm_mag_scy_val[m] = mag_scy_val_tmp
-                    norm_mag_scz_val[m] = mag_scz_val_tmp
-                    
-                    Bx = mag_scx_val_tmp
-                    By = mag_scy_val_tmp
-                    Bz = mag_scz_val_tmp
-                    B = np.sqrt(Bx**2+By**2+Bz**2)
-                    Bx_By = np.sqrt(Bx**2+By**2)
-                    
-                    rot_mat = np.array([[Bx/B,    By/B,                         Bz/B],\
-                                       [0,        Bx_By*Bz/(By**2+Bz**2),      -Bx_By*By/(By**2+Bz**2)],\
-                                       [-Bx_By/B, Bx*By*Bx_By/(B*(By**2+Bz**2)),Bx*Bz*Bx_By/(B*(By**2+Bz**2))]])#rotation matrix from SC to FA
-                        
-                    rot_mat_sc_fa.append(rot_mat)
-                    rot_inv = inv(rot_mat)
-                    rot_mat_inv.append(rot_inv)
-                    tmp_tens = np.dot(rot_mat,tens_val_tmp) #first calculation of T' = R T R^-1
-                    tens_fa.append(np.dot(tmp_tens,rot_inv)) #temperature tensor rotated to FA coords.
-
-                tens_fa = np.array(tens_fa)
+                    temp_bin_size = temp_len_arr[l]/n_temp_bins
+                    temp_ind_arr = np.arange(temp_len_arr[l])
+                    norm_temp_time = np.zeros((n_temp_bins,))
+                    norm_temp_val = np.zeros((n_temp_bins,))
+                    norm_tens_time = np.zeros((n_temp_bins,))
+                    norm_tens_val = np.zeros((n_temp_bins,3,3))
+                    norm_dens_val = np.zeros((n_temp_bins,))
+                    norm_alp_val = np.zeros((n_alp_bins,))
     
-                temp_time[l] = np.array(norm_temp_time)                
-                temperature_data[l] = np.array(norm_temp_val)
-                density_data[l] = np.array(norm_dens_val)
-                tens_time[l] = np.array(norm_tens_time)
-                tens_sc_data[l] = np.array(norm_tens_val)
-                
-                rot_mat_sc_fa = np.array(rot_mat_sc_fa)
-                rot_mat_inv = np.array(rot_mat_inv)
-                
-                
-                rot_mat_sc_fa_lst.append(rot_mat_sc_fa)
-                rot_mat_inv_lst.append(rot_mat_inv)
-                mag_time[l] = np.array(norm_mag_time)
-                
-                b_mag = np.sqrt(norm_mag_scx_val**2+norm_mag_scy_val**2+norm_mag_scz_val**2)*1e-9 #convert to Tesla from nT
-                mag_b_data.append(b_mag)
-                mag_scx_data[l] =  np.array(norm_mag_scx_val)
-                mag_scy_data[l] =  np.array(norm_mag_scy_val)
-                mag_scz_data[l] =  np.array(norm_mag_scz_val)
-                
-                t_tensor_FA_coords.append(np.array(tens_fa))
-
-                T_perp_I_tmp = np.array(tens_fa[:,1,1]+tens_fa[:,2,2])/2
-                T_par_I_tmp = np.array(tens_fa[:,0,0])
-                T_anis = T_perp_I_tmp/T_par_I_tmp
-                
-                T_perp_I.append(T_perp_I_tmp/temperature_data[l])
-                T_par_I.append(T_par_I_tmp/temperature_data[l])
-                T_anis_I.append(T_anis)
-                
-                T_par_J = T_par_I_tmp*eVtoJ #converts eV temperature to Joules
-                
-                beta = 2*mu*density_data[l]*T_par_J/b_mag**2
-                Beta_par_I.append(beta)
-                
-                bef_beta = []
-                dur_beta = []
-                aft_beta = []
-                
-                bef_anis = []
-                dur_anis = []
-                aft_anis = []
-                for m in range(n_temp_bins):
-                    if m < n_temp_bins/3:
-                        bef_beta.append(beta[m])
-                        bef_anis.append(T_anis[m])
-                    elif m >= n_temp_bins/3 and m < 2*n_temp_bins/3:
-                        dur_beta.append(beta[m])
-                        dur_anis.append(T_anis[m])
-                    elif m >= 2*n_temp_bins/3:
-                        aft_beta.append(beta[m])
-                        aft_anis.append(T_anis[m])
-                
-                Beta_par_bef.append(bef_beta)
-                Beta_par_dur.append(dur_beta)
-                Beta_par_aft.append(aft_beta)
-                
-                T_anis_bef.append(bef_anis)
-                T_anis_dur.append(dur_anis)
-                T_anis_aft.append(aft_anis)
-                
-                Beta_par_bef_med.append(bef_beta[round(len(bef_beta)/2)])
-                Beta_par_dur_med.append(dur_beta[round(len(dur_beta)/2)])
-                Beta_par_aft_med.append(aft_beta[round(len(aft_beta)/2)]) #aft_beta
-                
-                T_anis_bef_med.append(bef_anis[round(len(bef_anis)/2)]) #bef_anis
-                T_anis_dur_med.append(dur_anis[round(len(dur_anis)/2)]) #dur_anis
-                T_anis_aft_med.append(aft_anis[round(len(aft_anis)/2)]) #aft_anis
-                
-                pa_bin_size = pa_len_arr[l]/pa_bins
-                pa_ind_arr = np.arange(pa_len_arr[l])
-                
-                norm_pa_time = np.zeros((pa_bins,))
-                norm_pa_tmp = np.zeros((pa_bins,len(pa_angle_lst)))
-                norm_pa_angle = np.zeros((pa_bins,len(pa_angle_lst)))
-                
-                #print(norm_pa_tmp.shape)
-                #print(norm_pa_angle.shape)
-                
-                pa_t = pa_time[l]
-                pa_dat = pa_spec[l]
-                pa_ang = pa_angle[l]
-                
-                for m in range(pa_bins):
-                    pa_win_str = m*pa_bin_size
-                    pa_win_end = (m+1)*pa_bin_size
+                    rot_mat_sc_fa = []
+                    rot_mat_inv = []
                     
-                    pa_wind_where = np.where((pa_ind_arr>=pa_win_str)&(pa_ind_arr<pa_win_end))
-                    pa_wind_where = pa_wind_where[0]
+                    bin_size = mag_len_arr[l]/n_temp_bins
+                    ind_arr = np.arange(mag_len_arr[l])
+                    norm_mag_time = np.zeros((n_temp_bins,))
+                    norm_mag_scx_val = np.zeros((n_temp_bins,))
+                    norm_mag_scy_val = np.zeros((n_temp_bins,))
+                    norm_mag_scz_val = np.zeros((n_temp_bins,))
                     
-                    pa_time_val_tmp = np.median(pa_t[pa_wind_where])
-                    pa_val_tmp = np.nanmedian(pa_dat[:,pa_wind_where],axis=1)
-                    pa_ang_tmp = pa_ang
+                    tens_fa = []
+                    temp_anis_dav = []
                     
-                    #print(pa_val_tmp.shape)
-                    #print(pa_ang_tmp.shape)
+                    # alp_bin_size = alp_len_arr[l]/n_alp_bins
+                    # alp_ind_arr = np.arange(alp_len_arr[l])
                     
-                    norm_pa_time[m] = pa_time_val_tmp
-                    norm_pa_tmp[m,:] = pa_val_tmp
-                    norm_pa_angle[m,:] = pa_ang_tmp
+                    # for m in range(n_alp_bins):
+                    #     win_str = m*alp_bin_size
+                    #     win_end = (m+1)*alp_bin_size
+                    #     wind_where = np.where((alp_ind_arr>=win_str)&(alp_ind_arr<win_end))
+                    #     wind_where = wind_where[0]
+                    #     alp_val_tmp = np.nanmedian(alpha_data[l][wind_where])
+                    #     norm_alp_val[m] = alp_val_tmp
                     
-                pa_time[l] = np.array(norm_pa_time)
-                pa_spec[l] = np.array(norm_pa_tmp)
-                pa_angle[l] = np.array(norm_pa_angle)
-            
-            
+                    # alpha_data[l] = np.array(norm_alp_val)
+                    
+                    for m in range(n_temp_bins):
+                        
+                        win_str = m*temp_bin_size
+                        win_end = (m+1)*temp_bin_size
+                        wind_where = np.where((temp_ind_arr>=win_str)&(temp_ind_arr<win_end))
+                        wind_where = wind_where[0]
+                        temp_time_val_tmp = np.median(temp_time[l][wind_where])
+                        temp_val_tmp = np.median(temperature_data[l][wind_where])
+                        dens_val_tmp = np.median(density_data[l][wind_where])
+    
+                        tens_val_tmp = np.median(tens_sc_data[l][wind_where,:,:],axis=0)
+                        
+                        norm_temp_time[m] = temp_time_val_tmp
+                        norm_temp_val[m] = temp_val_tmp
+                        norm_dens_val[m] = dens_val_tmp
+                        norm_tens_time[m] = temp_time_val_tmp
+                        norm_tens_val[m] = tens_val_tmp
+                        
+                        
+                        win_str_mag = m*bin_size
+                        win_end_mag = (m+1)*bin_size
+                        wind_where = np.where((ind_arr>=win_str_mag)&(ind_arr<win_end_mag))
+                        wind_where = wind_where[0]
+                        mag_time_val_tmp = np.median(mag_time[l][wind_where])
+                        mag_scx_val_tmp = np.median(mag_scx_data[l][wind_where])
+                        mag_scy_val_tmp = np.median(mag_scy_data[l][wind_where])
+                        mag_scz_val_tmp = np.median(mag_scz_data[l][wind_where])
+                        norm_mag_time[m] = mag_time_val_tmp
+                        norm_mag_scx_val[m] = mag_scx_val_tmp
+                        norm_mag_scy_val[m] = mag_scy_val_tmp
+                        norm_mag_scz_val[m] = mag_scz_val_tmp
+                        
+                        Bx = mag_scx_val_tmp
+                        By = mag_scy_val_tmp
+                        Bz = mag_scz_val_tmp
+                        B = np.sqrt(Bx**2+By**2+Bz**2)
+                        Bx_By = np.sqrt(Bx**2+By**2)
+                        
+    
+                    
+                        # rot_mat = np.array([[Bx/B,    By/B,                         Bz/B],\
+                        #                     [0,        Bx_By*Bz/(By**2+Bz**2),      -Bx_By*By/(By**2+Bz**2)],\
+                        #                     [-Bx_By/B, Bx*By*Bx_By/(B*(By**2+Bz**2)),Bx*Bz*Bx_By/(B*(By**2+Bz**2))]])#rotation matrix from SC to FA
+                        
+                        rot_mat = david_rot_mat([Bx,By,Bz])
+    
+                        rot_mat_sc_fa.append(rot_mat)
+                        rot_inv = inv(rot_mat)
+                        rot_mat_inv.append(rot_inv)
+                        tmp_tens = np.matmul(rot_mat,tens_val_tmp) #first calculation of T' = R T R^-1
+                        tens_fin = np.matmul(tmp_tens,rot_inv)
+                        tens_fa.append(tens_fin) #temperature tensor rotated to FA coords.
+                   
+                        # anis_da = david_anis([Bx,By,Bz],tens_val_tmp)
+                        
+                        anis_da = steven_anis([Bx,By,Bz],tens_val_tmp)
+                        
+                        temp_anis_dav.append(anis_da)
+    
+                    
+                    
+                    # for m in range(n_temp_bins):
+                        
+                    #     Bx = mag_scx_data[l][m]
+                    #     By = mag_scy_data[l][m]
+                    #     Bz = mag_scz_data[l][m]
+                    #     B = np.sqrt(Bx**2+By**2+Bz**2)
+                    #     Bx_By = np.sqrt(Bx**2+By**2)
+                       
+                        
+                    #     rot_mat = np.array([[Bx/B,    By/B,                         Bz/B],\
+                    #                         [0,        Bx_By*Bz/(By**2+Bz**2),      -Bx_By*By/(By**2+Bz**2)],\
+                    #                         [-Bx_By/B, Bx*By*Bx_By/(B*(By**2+Bz**2)),Bx*Bz*Bx_By/(B*(By**2+Bz**2))]])#rotation matrix from SC to FA
+                        
+                        
+                    #     rot_mat_sc_fa.append(rot_mat)
+                   
+                    #     rot_inv = inv(rot_mat)
+                    #     rot_mat_inv.append(rot_inv)
+    
+                    #     tmp_tens = np.matmul(rot_mat,tens_sc_data[l][m]) #first calculation of T' = R T R^-1
+                    #     tens_fa.append(np.matmul(tmp_tens,rot_inv)) #temperature tensor rotated to FA coords.
+                        
+                    tens_fa = np.array(tens_fa)
+                    
+                    # print(len(temperature_data[l]))
+                    # breakpoint()
+                    temp_time[l] = np.array(norm_temp_time)                
+                    temperature_data[l] = np.array(norm_temp_val)
+                    density_data[l] = np.array(norm_dens_val)
+                    # print(len(temperature_data[l]))
+                    tens_time[l] = np.array(norm_tens_time)
+                    tens_sc_data[l] = np.array(norm_tens_val)
+                    
+                    rot_mat_sc_fa = np.array(rot_mat_sc_fa)
+                    rot_mat_inv = np.array(rot_mat_inv)
+                    
+                    
+                    rot_mat_sc_fa_lst.append(rot_mat_sc_fa)
+                    rot_mat_inv_lst.append(rot_mat_inv)
+                    mag_time[l] = np.array(norm_mag_time)
+                    
+                    b_mag = np.sqrt(norm_mag_scx_val**2+norm_mag_scy_val**2+norm_mag_scz_val**2)*1e-9 #convert to Tesla from nT
+                    mag_b_data.append(b_mag)
+                    mag_scx_data[l] =  np.array(norm_mag_scx_val)
+                    mag_scy_data[l] =  np.array(norm_mag_scy_val)
+                    mag_scz_data[l] =  np.array(norm_mag_scz_val)
+                    
+                    t_tensor_FA_coords.append(np.array(tens_fa))
+    
+                    T_perp_I_tmp = np.array(tens_fa[:,1,1]+tens_fa[:,2,2])/2
+                    T_par_I_tmp = np.array(tens_fa[:,0,0])
+                    T_anis = T_perp_I_tmp/T_par_I_tmp
+                    T_anis_dav = np.array(temp_anis_dav)
+                    
+                    # print(temperature_data[l])
+                    
+                    T_perp_n.append(T_perp_I_tmp/temperature_data[l])
+                    T_par_n.append(T_par_I_tmp/temperature_data[l])
+                    
+                    T_perp_I.append(T_perp_I_tmp)
+                    T_par_I.append(T_par_I_tmp)
+                    
+                    T_anis_I.append(T_anis)
+                    T_anis_david.append(T_anis_dav)
+                    
+                    T_par_J = T_par_I_tmp*eVtoJ #converts eV temperature to Joules
+                    
+                    beta = 2*mu*density_data[l]*T_par_J/b_mag**2
+                    Beta_par_I.append(beta)
+                    
+                    bef_beta = []
+                    dur_beta = []
+                    aft_beta = []
+                    
+                    bef_anis = []
+                    dur_anis = []
+                    aft_anis = []
+                    for m in range(n_temp_bins):
+                        if m < n_temp_bins/3:
+                            bef_beta.append(beta[m])
+                            bef_anis.append(T_anis[m])
+                        elif m >= n_temp_bins/3 and m < 2*n_temp_bins/3:
+                            dur_beta.append(beta[m])
+                            dur_anis.append(T_anis[m])
+                        elif m >= 2*n_temp_bins/3:
+                            aft_beta.append(beta[m])
+                            aft_anis.append(T_anis[m])
+                    
+                    Beta_par_bef.append(bef_beta)
+                    Beta_par_dur.append(dur_beta)
+                    Beta_par_aft.append(aft_beta)
+                    
+                    T_anis_bef.append(bef_anis)
+                    T_anis_dur.append(dur_anis)
+                    T_anis_aft.append(aft_anis)
+                    
+                    Beta_par_bef_med.append(bef_beta[round(len(bef_beta)/2)])
+                    Beta_par_dur_med.append(dur_beta[round(len(dur_beta)/2)])
+                    Beta_par_aft_med.append(aft_beta[round(len(aft_beta)/2)]) #aft_beta
+                    
+                    T_anis_bef_med.append(bef_anis[round(len(bef_anis)/2)]) #bef_anis
+                    T_anis_dur_med.append(dur_anis[round(len(dur_anis)/2)]) #dur_anis
+                    T_anis_aft_med.append(aft_anis[round(len(aft_anis)/2)]) #aft_anis
+                    
+                    # pa_bin_size = pa_len_arr[l]/pa_bins
+                    # pa_ind_arr = np.arange(pa_len_arr[l])
+                    
+                    # norm_pa_time = np.zeros((pa_bins,))
+                    # norm_pa_tmp = np.zeros((pa_bins,len(pa_angle_lst)))
+                    # norm_pa_angle = np.zeros((pa_bins,len(pa_angle_lst)))
+                    
+                    #print(norm_pa_tmp.shape)
+                    #print(norm_pa_angle.shape)
+                    
+                    # pa_t = pa_time[l]
+                    # pa_dat = pa_spec[l]
+                    # pa_ang = pa_angle[l]
+                    
+                    # for m in range(pa_bins):
+                    #     pa_win_str = m*pa_bin_size
+                    #     pa_win_end = (m+1)*pa_bin_size
+                        
+                    #     pa_wind_where = np.where((pa_ind_arr>=pa_win_str)&(pa_ind_arr<pa_win_end))
+                    #     pa_wind_where = pa_wind_where[0]
+                        
+                    #     pa_time_val_tmp = np.median(pa_t[pa_wind_where])
+                    #     pa_val_tmp = np.nanmedian(pa_dat[:,pa_wind_where],axis=1)
+                    #     pa_ang_tmp = pa_ang
+                        
+                        #print(pa_val_tmp.shape)
+                        #print(pa_ang_tmp.shape)
+                        
+                    #     norm_pa_time[m] = pa_time_val_tmp
+                    #     norm_pa_tmp[m,:] = pa_val_tmp
+                    #     norm_pa_angle[m,:] = pa_ang_tmp
+                        
+                    # pa_time[l] = np.array(norm_pa_time)
+                    # pa_spec[l] = np.array(norm_pa_tmp)
+                    # pa_angle[l] = np.array(norm_pa_angle)
+                
+                #print(np.array(T_perp_I).shape, ' array shape')
             
             if plot == 'epoch' or plot == 'all':
 
-                savepath = '/Users/besh2109/Desktop/PSP_epoch/temp_epoch/'
+                savepath = '/Users/besh2109/Desktop/PSP_epoch/ion_epoch/'
 
                 if not by_Rs:
                     if i==0:
+                        savename = 'All_Events_ion_epoch.png'
                         if no_enc_7:
-                            savename = 'All_Events_no_7_temp_epoch.png'
-                        elif no_enc_1:
-                            savename = 'All_Events_no_1_temp_epoch.png'
-                        else:
-                            savename = 'All_Events_temp_epoch.png'      
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+                        nametmp = 'All Encounters'
                     else:
-                        savename = 'Enc_'+str(i)+'_temp_epoch.png'
+                        savename = 'Enc_'+str(i)+'_ion_epoch.png'
+                        nametmp = 'Encounter '+str(i)
+                        if no_enc_1:
+                            savename = 'Enc_'+str(i+1)+'_ion_epoch.png'
+                            nametmp = 'Encounter '+str(i+1)
                 else:
                     if i==0:
+                        savename = 'All_Events_ion_epoch.png'
                         if no_enc_7:
-                            savename = 'All_Events_no_7_temp_epoch.png'
-                        elif no_enc_1:
-                            savename = 'All_Events_no_1_temp_epoch.png'
-                        else:
-                            savename = 'All_Events_temp_epoch.png'      
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+                        nametmp = 'All Rs'
                     else:
-                        savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_temp_epoch.png'
-            
-                fis1 = plt.figure(figsize=(15,12))
-                axs1 = fis1.add_subplot(411)
+                        savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_ion_epoch.png'
+                        nametmp = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+' Rs'
+
+                plt.rcParams['font.size']='20'
+                fis1 = plt.figure(figsize=(15,15))
+                #fis1.suptitle('Magnetic Field Unit Vector '+name, fontsize=16,y=0.92)
+                #$\frac{B_T}{|B|}$
+                ylabs = [r'$\frac{T\perp}{T_{avg}}$',r'$\frac{T_{||}}{T_{avg}}$','Temperature Anisotropy']
+                # datas = [T_perp_n,T_anis_david,T_anis_I]
+                datas = [T_perp_n,T_par_n,T_anis_I]
+                # bin_list = [40,200,40]
+                bin_list = [40,40,40]
                 
+                datamax = T_anis_I
+                    
                 ind_hist = []
                 data_hist = []
-                for o in T_perp_I:
+                ind_line = np.linspace(-win_len,win_len+1,len(datamax[0]))
+                median_line = np.median(np.array(datamax),0)
+                quart_line1 = np.quantile(np.array(datamax),0.25,axis=0)
+                quart_line2 = np.quantile(np.array(datamax),0.75,axis=0)
+                for o in datamax:
                     ind = list(range(len(o)))
                     data = list(o)
                     ind_hist = ind_hist + ind
                     data_hist = data_hist + data
                     #axs1.plot(o)
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
+                ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                max_hist_arr = np.array(data_hist)
+                histo,xedge,yedge = np.histogram2d(ind_hist_arr,max_hist_arr,bins=[n_temp_bins,40])
+                histomax = np.transpose(histo)
+                histomax[histomax==0]=np.nan
                 
-                            
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
+                for ii in range(3):
+
+                    axs = fis1.add_subplot(3,1,ii+1)
+                
+                    data1 = datas[ii]
+                    
+                    ind_hist = []
+                    data_hist = []
+                    ind_line = np.linspace(-win_len,win_len+1,len(data1[0]))
+                    median_line = np.median(np.array(data1),0)
+                    quart_line1 = np.quantile(np.array(data1),0.25,axis=0)
+                    quart_line2 = np.quantile(np.array(data1),0.75,axis=0)
+                    for o in data1:
+                        ind = list(range(len(o)))
+                        data = list(o)
+                        ind_hist = ind_hist + ind
+                        data_hist = data_hist + data
+                        #axs1.plot(o)
+                    ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                    data_hist_arr = np.array(data_hist)
+                    
+                                
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,bin_list[ii]])
+                    histo = np.transpose(histo)
+                    histo[histo==0]=np.nan
+                    
+                    # histo = np.log(histo)
+        
+                    r_color = axs.pcolormesh(xedge,yedge,histo, cmap='magma',vmax=np.nanmax(histo))  #,np.log10(histo)
+                    
+                    axs.plot(ind_line,median_line, color='darkturquoise',linewidth=3,label='Median')
+                    axs.plot(ind_line,quart_line1, color='seagreen',linewidth=3,label='1st quantile', linestyle='dashed')
+                    axs.plot(ind_line,quart_line2, color='seagreen',linewidth=3,label='3rd quantile', linestyle='dashed')
+                    
+                    axs.tick_params(axis='both', which='major')
+                    # axs.tick_params(axis='both', which='major', labelsize=16)
+                    if ii==0:
+                        axs.legend(loc=(1.1,0.6))
+                        #leg = axs.legend(bbox_to_anchor=(1.01,1), loc'upper left', borderaxespad=0)
+                    # if ii == 1:
+                    #     axs.set_ylim(0,4)
+                    if ii!=2:
+                        axs.get_xaxis().set_ticks([])
+                        axs.set_ylabel(ylabs[ii],rotation=0,fontsize=32)
+                        axs.yaxis.set_label_coords(-0.1,0.5)
+                    else:
+                        # axs.set_xlabel('Normalized Time',fontsize=18)
+                        axs.set_xlabel('Normalized Time')
+                        # axs.set_ylim([0.5,3])
+                        axs.set_ylabel(ylabs[ii])
+                        axs.yaxis.set_label_coords(-0.085,0.5)
+                    # axs.set_ylabel(ylabs[ii],fontsize=18)
     
-                r_color = axs1.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                
-                #height = [-0.6,-0.6]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs1.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                axs1.set(title='Ion Tperp/Tinst')
-                #axs1.set_ylim(-25,25)
-                axs1.set_ylabel('Tperp/Tinst')
-                #axs1.set_xlabel('Normalized time')
-                #plt.title()
-                #plt.show()
-                box = axs1.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(r_color,cax=axColor, label='Counts')
-                
-                axs2 = fis1.add_subplot(412)
-                
-                ind_hist = []
-                data_hist = []
-                for o in T_par_I:
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs1.plot(o)
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                            
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                r_color = axs2.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                
-                #height = [-0.6,-0.6]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs1.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                axs2.set(title='Ion Tpar/Tinst')
-                #axs2.set_ylim(-25,25)
-                axs2.set_ylabel('Tpar/Tinst')
-                #axs2.set_xlabel('Normalized time')
-                #plt.title()
-                #plt.show()
-                box = axs2.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(r_color,cax=axColor, label='Counts')
-                
-                axs3 = fis1.add_subplot(413)
-                
-                ind_hist = []
-                data_hist = []
-                for o in T_anis_I:
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs1.plot(o)
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                # ind_hist_arr = np.delete(ind_hist_arr,data_hist_arr<-1)
-                # data_hist_arr = np.delete(data_hist_arr,data_hist_arr<-1)
-                
-                # ind_hist_arr = np.delete(ind_hist_arr,data_hist_arr>4)
-                # data_hist_arr = np.delete(data_hist_arr,data_hist_arr>4)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,200])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                r_color = axs3.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                
-                #height = [-0.6,-0.6]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs1.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                axs3.set(title='Ion temperature anisotropy')
-                axs3.set_ylim(0,3)
-                axs3.set_ylabel('Tperp/Tpar')
-                #axs3.set_xlabel('Normalized time')
-                #plt.title()
-                #plt.show()
-                box = axs3.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(r_color,cax=axColor, label='Counts')
+                    box = axs.get_position()
+                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+                    cbar = fis1.colorbar(r_color,cax=axColor)
+                    cbar.set_label(label='Counts')
+                    #cbar.set_label(label='Counts', size=16)
+                    #cbar.ax.tick_params(labelsize=14) 
                 
                 
-                axs4 = fis1.add_subplot(414)
+                plt.subplots_adjust(wspace=0, hspace=0.05)
+                # plt.show()
                 
-                ind_hist = []
-                data_hist = []
-                for o in Beta_par_I:
-                    ind = list(range(len(o)))
-                    data = list(o)
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                    #axs1.plot(o)
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
-                histo = np.transpose(histo)
-                histo[histo==0]=np.nan
-    
-                r_color = axs4.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                
-                #height = [-0.6,-0.6]
-                #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                #axs4.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                axs4.set(title='Plasma Beta Parallel')
-                #axs4.set_ylim(-0.2,0.75)
-                axs4.set_ylabel('P/Pb')
-                #axs4.set_xlabel('Normalized time')
-                #plt.title()
-                #plt.show()
-                box = axs4.get_position()
-                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                fis1.colorbar(r_color,cax=axColor, label='Counts')
-                
-                #fis2 = plt.figure(figsize=(15,10))
-                #breakpoint()
+                # breakpoint()
+
                 plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
                 plt.clf()
                 plt.cla()
                 plt.close('all')
                 plt.close(fis1)
-                #plt.show()
             
             if plot == 'dist' or plot == 'all':
                 
                 #fis1 = plt.figure(figsize=(15,10))
                 #axs1 = fis1.add_subplot(131)
 
-                savepath = '/Users/besh2109/Desktop/PSP_epoch/temp_dist/'
+                savepath = '/Users/besh2109/Desktop/PSP_epoch/ion_dist/'
                 
                 if not by_Rs:
                     if i==0:
+                        savename = 'All_Events_ion_dist.png'
                         if no_enc_7:
-                            savename = 'All_Events_no_7_temp_dist.png'
-                        elif no_enc_1:
-                            savename = 'All_Events_no_1_temp_dist.png'
-                        else:
-                            savename = 'All_Events_temp_dist.png'      
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+    
                     else:
-                        savename = 'Enc_'+str(i)+'_temp_dist.png'
+                        savename = 'Enc_'+str(i)+'_ion_dist.png'
+                        if no_enc_1:
+                            savename = 'Enc_'+str(i+1)+'_ion_dist.png'
                 else:
                     if i==0:
+                        savename = 'All_Events_ion_dist.png'
                         if no_enc_7:
-                            savename = 'All_Events_no_7_temp_dist.png'
-                        elif no_enc_1:
-                            savename = 'All_Events_no_1_temp_dist.png'
-                        else:
-                            savename = 'All_Events_temp_dist.png'      
+                            savename = savename[:10]+'_no_enc_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_enc_1'+savename[10:]       
                     else:
                         if no_enc_1:
-                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_no_1_temp_dist.png'
+                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_no_1_ion_dist.png'
                         else:
-                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_temp_dist.png'
+                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_ion_dist.png'
 
-                fig1 = plt.figure(figsize=(15,15))
-                fig1.suptitle('Ion Temperature Distributions '+name, fontsize=16,y=0.92)
-                ax1 = fig1.add_subplot(221)
-                ax2 = fig1.add_subplot(222)
-                ax3 = fig1.add_subplot(223)
-                ax4 = fig1.add_subplot(224)
-                
-                ind_hist = []
-                data_hist = []
-                for o in T_perp_I:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
-                histo = np.transpose(histo)
-
-                k=0
-                dist1per = np.zeros(histo[:,0].shape)
-                while k < round(n_temp_bins/3): #distribution 1
-                    dist1per = dist1per + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_temp_bins/3)
-                dist2per = np.zeros(histo[:,0].shape)
-                while k >= round(n_temp_bins/3) and k < round(2*n_temp_bins/3): #distribution 2
-                    dist2per = dist2per + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_temp_bins/3)
-                dist3per = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_temp_bins/3) and k<n_temp_bins: #distribution 3
-                    dist3per = dist3per + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax1.set_aspect(1)
-                #ax1.set_adjustable('box')
-                norm_val = np.max(dist2per)
-                ax1.plot(yedge[1:len(yedge)],dist1per/norm_val,color='red',label='before wave')
-                ax1.plot(yedge[1:len(yedge)],dist2per/norm_val,color='green',label='during wave')
-                ax1.plot(yedge[1:len(yedge)],dist3per/norm_val,color='blue',label='after wave')
-                ax1.legend()
-                #ax1.set_ylim([0,120])
-                ax1.set_title('Ion Temp Perp / Ion Temp INST')
-                ax1.set_ylabel('Normalized Counts Distribution')
-                ax1.set_xlabel('Tperp/Tinst')
-                ax1.set_adjustable('box')
-                #ax1.set_xlim(-25,25)
-                
-                #ax2 = fig1.add_subplot(2,2,(1,2))
-                
-                ind_hist = []
-                data_hist = []
-                for o in T_par_I:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
-                histo = np.transpose(histo)
-                
-                
-
-                k=0
-                dist1par = np.zeros(histo[:,0].shape)
-                while k < round(n_temp_bins/3): #distribution 1
-                    dist1par = dist1par + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_temp_bins/3)
-                dist2par = np.zeros(histo[:,0].shape)
-                while k >= round(n_temp_bins/3) and k < round(2*n_temp_bins/3): #distribution 2
-                    dist2par = dist2par + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_temp_bins/3)
-                dist3par = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_temp_bins/3) and k<n_temp_bins: #distribution 3
-                    dist3par = dist3par + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-                
-                #ax2.set_aspect(1)
-                #ax2.set_adjustable('box')
-                norm_val = np.max(dist2par)
-                ax2.plot(yedge[1:len(yedge)],dist1par/norm_val,color='red',label='before wave')
-                ax2.plot(yedge[1:len(yedge)],dist2par/norm_val,color='green',label='during wave')
-                ax2.plot(yedge[1:len(yedge)],dist3par/norm_val,color='blue',label='after wave')
-                ax2.legend()
-                #ax2.set_ylim([0,26])
-                ax2.set_title('Ion Temp Par / Ion Temp INST')
-                ax2.set_ylabel('Normalized Counts Distribution')
-                ax2.set_xlabel('Tpar/Tinst')
-                ax2.set_adjustable('box')
-                
-                #ax3 = fig1.add_subplot(2,2,(2,1))
+                #fig1.suptitle('Ion Temperature Distributions '+name, fontsize=16,y=0.92)
                 
                 ind_hist = []
                 data_hist = []
@@ -2684,6 +2704,9 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                     data_hist = data_hist + data
                 ind_hist_arr = np.array(ind_hist)
                 data_hist_arr = np.array(data_hist)
+                
+                ind_hist_arr = np.delete(ind_hist_arr,np.isnan(data_hist_arr))
+                data_hist_arr = np.delete(data_hist_arr,np.isnan(data_hist_arr))
                 
                 histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
                 histo = np.transpose(histo)
@@ -2691,82 +2714,88 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 k=0
                 dist1an = np.zeros(histo[:,0].shape)
                 while k < round(n_temp_bins/3): #distribution 1
-                    dist1an = dist1an + histo[:,k]/np.sum(histo[:,k])
+                    dist1an = dist1an + histo[:,k]#/np.sum(histo[:,k])
                     k+=1
 
                 k=round(n_temp_bins/3)
                 dist2an = np.zeros(histo[:,0].shape)
                 while k >= round(n_temp_bins/3) and k < round(2*n_temp_bins/3): #distribution 2
-                    dist2an = dist2an + histo[:,k]/np.sum(histo[:,k])
+                    dist2an = dist2an + histo[:,k]#/np.sum(histo[:,k])
                     k+=1
 
                 k=round(2*n_temp_bins/3)
                 dist3an = np.zeros(histo[:,0].shape)
                 while k >= round(2*n_temp_bins/3) and k<n_temp_bins: #distribution 3
-                    dist3an = dist3an + histo[:,k]/np.sum(histo[:,k])
+                    dist3an = dist3an + histo[:,k]#/np.sum(histo[:,k])
                     k+=1
                 
                 #ax3.set_aspect(1)
                 #ax3.set_adjustable('box')
                 norm_val = np.max(dist2an)
-                ax3.plot(yedge[1:len(yedge)],dist1an/norm_val,color='red',label='before wave')
-                ax3.plot(yedge[1:len(yedge)],dist2an/norm_val,color='green',label='during wave')
-                ax3.plot(yedge[1:len(yedge)],dist3an/norm_val,color='blue',label='after wave')
+                
+                norm1 = np.sum(dist1an)
+                norm2 = np.sum(dist2an)
+                norm3 = np.sum(dist3an)
+                
+                norm_val = np.max(dist2an/norm2)
+                
+                
+                xcenters = (xedge[:-1] + xedge[1:]) / 2
+                ycenters = (yedge[:-1] + yedge[1:]) / 2
+                
+                befmed = np.median(ycenters*dist1an)
+                durmed = np.median(ycenters*dist2an)
+                aftmed = np.median(ycenters*dist3an)
+                
+                
+                xvals = ycenters
+                yvalsbefaft = ((dist1an/norm1+dist3an/norm3)/2)/norm_val
+                yvalsdur = (dist2an/norm2)/norm_val
+                model = SkewedGaussianModel()
+                params = model.make_params(amplitude=np.max((dist1an/norm1)), center=1.05, sigma=1, gamma=0)
+                resultbefaft = model.fit(yvalsbefaft, params, x=xvals)
+                print(resultbefaft.fit_report())
+                resultdur = model.fit(yvalsdur, params, x=xvals)
+                print(resultdur.fit_report())
+                
+                
+                plt.rcParams['font.size']='20'
+                fig1 = plt.figure(figsize=(22.5,10))
+                
+                #breakpoint()
+                ax3 = fig1.add_subplot(121)
+                
+                ax3.plot(ycenters,(dist1an/norm1)/norm_val,color='red',label='before region')
+                ax3.plot(ycenters,(dist2an/norm2)/norm_val,color='green',label='during region')
+                ax3.plot(ycenters,(dist3an/norm3)/norm_val,color='blue',label='after region')
                 ax3.legend()
                 #ax3.set_ylim([0,34])
                 ax3.set_xlim([0,3])
                 ax3.set_title('Ion Temperature Anisotropy')
                 ax3.set_ylabel('Normalized Counts Distribution')
-                ax3.set_xlabel('Tperp/Tpar')
+                ax3.set_xlabel(r'$\frac{T\perp}{T_{||}}$', fontsize=30)#r'$\frac{T_{||}}{T_{avg}}$' r'$\frac{T\perp}{T_{||}}$'
                 ax3.set_adjustable('box')
-                
-                #ax4 = fig1.add_subplot(2,2,(2,2))
-                
-                ind_hist = []
-                data_hist = []
-                for o in Beta_par_I:
-                    ind = list(range(len(o)))
-                    data = list(o) #- np.median(o))
-                    ind_hist = ind_hist + ind
-                    data_hist = data_hist + data
-                ind_hist_arr = np.array(ind_hist)
-                data_hist_arr = np.array(data_hist)
-                
-                histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
-                histo = np.transpose(histo)
+                # ax3.set_aspect('equal')
 
-                k=0
-                dist1B = np.zeros(histo[:,0].shape)
-                while k < round(n_temp_bins/3): #distribution 1
-                    dist1B = dist1B + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(n_temp_bins/3)
-                dist2B = np.zeros(histo[:,0].shape)
-                while k >= round(n_temp_bins/3) and k < round(2*n_temp_bins/3): #distribution 2
-                    dist2B = dist2B + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
-
-                k=round(2*n_temp_bins/3)
-                dist3B = np.zeros(histo[:,0].shape)
-                while k >= round(2*n_temp_bins/3) and k<n_temp_bins: #distribution 3
-                    dist3B = dist3B + histo[:,k]/np.sum(histo[:,k])
-                    k+=1
                 
-                #ax3.set_aspect(1)
-                #ax3.set_adjustable('box')
-                norm_val = np.max(dist2B)
-                ax4.plot(yedge[1:len(yedge)],dist1B/norm_val,color='red',label='before wave')
-                ax4.plot(yedge[1:len(yedge)],dist2B/norm_val,color='green',label='during wave')
-                ax4.plot(yedge[1:len(yedge)],dist3B/norm_val,color='blue',label='after wave')
-                ax4.legend()
-                #ax4.set_xlim([0,2])
-                #ax4.set_ylim([0,50])
-                ax4.set_title('Plasma Beta Parallel')
+                ax4 = fig1.add_subplot(122)
+                #breakpoint()
+                per_shift = np.round(((resultdur.best_values['center'] - resultbefaft.best_values['center'])/resultbefaft.best_values['center'])*100,1)
+                per_shift_text = 'Shift percent: '+str(per_shift)+'%'
+                chi_sqr_text = 'Chi Square: '+str(resultdur.chisqr)[0:6]
+                
+                ax4.plot(ycenters,resultbefaft.best_fit,color='purple',label='before-after average')
+                ax4.text(0.56,0.75,per_shift_text, transform=ax4.transAxes)
+                ax4.text(0.56,0.70,chi_sqr_text, transform=ax4.transAxes)
+                ax4.plot(ycenters,resultdur.best_fit,color='green',label='during region')
+                #ax4.plot(ycenters,dist3an/norm3,color='blue',label='after region')
+                ax4.legend(loc='upper right')
+                #ax3.set_ylim([0,34])0.5, 0.5, 'matplotlib', horizontalalignment='center',verticalalignment='center', transform=ax.transAxes
+                ax4.set_xlim([0,3])
+                ax4.set_title('Ion Temperature Anisotropy Skewed Gauss Fit')
                 ax4.set_ylabel('Normalized Counts Distribution')
-                ax4.set_xlabel('P/Pb')
+                ax4.set_xlabel(r'$\frac{T\perp}{T_{||}}$', fontsize=30)
                 ax4.set_adjustable('box')
-                
                 
                 plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
                 plt.clf()
@@ -2779,31 +2808,31 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 #fis1 = plt.figure(figsize=(15,10))
                 #axs1 = fis1.add_subplot(131)
 
-                savepath = '/Users/besh2109/Desktop/PSP_epoch/temp_beta/'
+                savepath = '/Users/besh2109/Desktop/PSP_epoch/ion_beta/'
                 
                 if not by_Rs:
                     if i==0:
                         if no_enc_7:
-                            savename = 'All_Events_no_7_temp_beta.png'
+                            savename = 'All_Events_no_7_ion_beta.png'
                         elif no_enc_1:
-                            savename = 'All_Events_no_1_temp_beta.png'
+                            savename = 'All_Events_no_1_ion_beta.png'
                         else:
-                            savename = 'All_Events_temp_beta.png'      
+                            savename = 'All_Events_ion_beta.png'      
                     else:
-                        savename = 'Enc_'+str(i)+'_temp_beta.png'
+                        savename = 'Enc_'+str(i)+'_ion_beta.png'
                 else:
                     if i==0:
                         if no_enc_7:
-                            savename = 'All_Events_no_7_temp_beta.png'
+                            savename = 'All_Events_no_7_ion_beta.png'
                         elif no_enc_1:
-                            savename = 'All_Events_no_1_temp_beta.png'
+                            savename = 'All_Events_no_1_ion_beta.png'
                         else:
-                            savename = 'All_Events_temp_beta.png'      
+                            savename = 'All_Events_ion_beta.png'      
                     else:
                         if no_enc_1:
-                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_no_1_temp_beta.png'
+                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_no_1_ion_beta.png'
                         else:
-                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_temp_beta.png'
+                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_ion_beta.png'
 
                 fig1 = plt.figure(figsize=(15,15))
                 fig1.suptitle('Ion Anisotropy vs Beta Para Distributions '+name, fontsize=16,y=0.92)
@@ -2813,10 +2842,10 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 ax4 = fig1.add_subplot(224)
                 
                 histo,xedge,yedge = np.histogram2d(Beta_par_bef_med,T_anis_bef_med, range=[[0, 1], [0, 5]],bins=[25,25]) #bins=[25,25],
-                ax1.scatter(Beta_par_bef_med,T_anis_bef_med,s=1,color='red',label='before wave')
+                ax1.scatter(Beta_par_bef_med,T_anis_bef_med,s=1,color='red',label='before region')
                 ax1.pcolormesh(xedge,yedge,np.transpose(histo)) #,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
                 
-                ax1.set_title('Ion Temperature Anisotropy vs Beta Parallel Before Wave')
+                ax1.set_title('Ion Temperature Anisotropy vs Beta Parallel Before Region')
                 ax1.set_ylabel('Tperp/Tpar')
                 ax1.set_xlabel('Beta Parallel')
                 ax1.set_ylim([0,5])
@@ -2825,11 +2854,11 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 ax1.legend()
                 
                 histo,xedge,yedge = np.histogram2d(Beta_par_dur_med,T_anis_dur_med, range=[[0, 1], [0, 5]],bins=[25,25]) # bins=[25,25],
-                ax2.scatter(Beta_par_dur_med,T_anis_dur_med,s=1,color='green',label='during wave')
+                ax2.scatter(Beta_par_dur_med,T_anis_dur_med,s=1,color='green',label='during region')
                 ax2.pcolormesh(xedge,yedge,np.transpose(histo)) #,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
                 
                 #ax2.set_ylim([0,26])
-                ax2.set_title('Ion Temperature Anisotropy vs Beta Parallel During Wave')
+                ax2.set_title('Ion Temperature Anisotropy vs Beta Parallel During Region')
                 ax2.set_ylabel('Tperp/Tpar')
                 ax2.set_xlabel('Beta Parallel')
                 ax2.set_ylim([0,5])
@@ -2838,10 +2867,10 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 ax2.legend()
                 
                 histo,xedge,yedge = np.histogram2d(Beta_par_aft_med,T_anis_aft_med, range=[[0, 1], [0, 5]],bins=[25,25]) #bins=[25,25],
-                ax3.scatter(Beta_par_aft_med,T_anis_aft_med,s=1,color='blue',label='after wave')
+                ax3.scatter(Beta_par_aft_med,T_anis_aft_med,s=1,color='blue',label='after region')
                 ax3.pcolormesh(xedge,yedge,np.transpose(histo)) #,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
                 
-                ax3.set_title('Ion Temperature Anisotropy vs Beta Parallel After Wave')
+                ax3.set_title('Ion Temperature Anisotropy vs Beta Parallel After Region')
                 ax3.set_ylabel('Tperp/Tpar')
                 ax3.set_xlabel('Beta Parallel')
                 ax3.set_ylim([0,5])
@@ -2852,12 +2881,12 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 beta_list = Beta_par_bef_med+Beta_par_dur_med+Beta_par_aft_med
                 anis_list = T_anis_bef_med+T_anis_dur_med+T_anis_aft_med
                 histo,xedge,yedge = np.histogram2d(beta_list,anis_list, range=[[0, 1], [0, 5]],bins=[25,25]) #bins=[25,25],
-                ax4.scatter(Beta_par_bef_med,T_anis_bef_med,s=1,color='red',label='before wave')
-                ax4.scatter(Beta_par_dur_med,T_anis_dur_med,s=1,color='green',label='during wave')
-                ax4.scatter(Beta_par_aft_med,T_anis_aft_med,s=1,color='blue',label='after wave')
+                ax4.scatter(Beta_par_bef_med,T_anis_bef_med,s=1,color='red',label='before region')
+                ax4.scatter(Beta_par_dur_med,T_anis_dur_med,s=1,color='green',label='during region')
+                ax4.scatter(Beta_par_aft_med,T_anis_aft_med,s=1,color='blue',label='after region')
                 ax4.pcolormesh(xedge,yedge,np.transpose(histo))#,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
                 
-                ax4.set_title('Ion Temperature Anisotropy vs Beta Parallel After Wave')
+                ax4.set_title('Ion Temperature Anisotropy vs Beta Parallel Whole Window')
                 ax4.set_ylabel('Tperp/Tpar')
                 ax4.set_xlabel('Beta Parallel')
                 ax4.set_ylim([0,5])
@@ -2866,8 +2895,10 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
                 ax4.legend()
                 #ax4.set_xlim([0,2])
                 #ax4.set_ylim([0,50])
-
                 
+               
+                
+                #ax2 = fig1.add_subplot(2,2,(1,2))
                 
                 plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
                 plt.clf()
@@ -2880,7 +2911,7 @@ def ion_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fals
             
         i+=1
         
-def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=False,resolution=10):
+def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=False,resolution=10,wavelen=90):
     
     i=0
     
@@ -2900,7 +2931,8 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
             
             if i==0:
                 csv_filename = 'harmwave_master_arch.csv'
-                csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 strahl_path = '/Users/besh2109/Desktop/psp_strahl_width/'
                 name = 'All Encounters'
                 if no_enc_7:
@@ -2910,13 +2942,15 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
 
             else:
                 csv_filename = 'enc_'+str(i)+'_harmwave_arch.csv'
-                csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                # csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
                 strahl_path = '/Users/besh2109/Desktop/psp_strahl_width/'
                 name = 'Encounter '+str(i)
         
         else:
             csv_filename = 'harmwave_master_arch.csv'
-            csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
             strahl_path = '/Users/besh2109/Desktop/psp_strahl_width/'
             strahl_file = 'Enc'+str(i)+'_PRELIMSTRAHLWIDTH.csv'
             
@@ -2937,8 +2971,8 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
             df = pd.read_csv(csv_path+csv_filename)
             bf = df.to_numpy()
 
-            af = np.delete(bf,bf[:,1]<90,0)
-            
+            af = np.delete(bf,bf[:,1]<wavelen,0)
+            #print(af.shape)
             if by_Rs and i !=0:
                 af = np.delete(af,af[:,2]>Rs_grps[i-1][0],0)
                 af = np.delete(af,af[:,2]<Rs_grps[i-1][1],0)
@@ -2984,6 +3018,10 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
             drift_data = []
             drift_len_arr = []
             drift_dur_med_arr = []
+            
+            cut_time = []
+            cut_data = []
+            cut_len_arr = []
             
             tpar_time = []
             tpar_data = []
@@ -3036,20 +3074,20 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     
                 #core drifts, or drift
                 
-                core_path = '/Users/besh2109/Desktop/psp_core_drift/'
-                core_file = 'coredrift_e1toe8.tplot'
-                
-                pyt.tplot_restore(core_path+core_file)
-                
-                drift_data_tmp = pyt.get_data('coredrift')
-                
-                drift_time_arr = drift_data_tmp[0]
-                drift_data_arr = drift_data_tmp[1]
-                
                 #core temperature, perp and parallel
                 
-                temp_path = '/Users/besh2109/Desktop/psp_core_temp/'
+                temp_path = '/Users/besh2109/Desktop/psp_electrons/'
                 temp_file = 'coret_e1toe8.tplot'
+                
+                drift_path = '/Users/besh2109/Desktop/psp_electrons/'
+                drift_file = 'coredrift_e1toe8.tplot'
+                
+                cutoff_path = '/Users/besh2109/Desktop/psp_electrons/'
+                cutoff_file = 'cutoffs_e1toe7.tplot'
+                
+                pyt.tplot_restore(temp_path+temp_file)
+                pyt.tplot_restore(drift_path+drift_file)
+                pyt.tplot_restore(cutoff_path+cutoff_file)
                 
                 par_data_tmp = pyt.get_data('coretpar')
                 per_data_tmp = pyt.get_data('coretperp')
@@ -3059,7 +3097,17 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                 
                 tper_time_arr = per_data_tmp[0]
                 tper_data_arr = per_data_tmp[1]
-
+                
+                drift_data_tmp = pyt.get_data('coredrift')
+                
+                drift_time_arr = drift_data_tmp[0]
+                drift_data_arr = drift_data_tmp[1]
+                
+                cut_data_tmp = pyt.get_data('cutoff_sunward')
+                
+                cut_time_arr = cut_data_tmp[0]
+                cut_data_arr = cut_data_tmp[1]
+                
                 """ date management """
                 
                 date_strt_flt = pys.time_float(uniq_dates[j])
@@ -3138,6 +3186,18 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     
                     temp_data.append((2*tper_data_tmp+tpar_data_tmp)/3)
                     temp_len_arr.append(len(tpar_ti))
+                    
+                    """ sunward cutoff velocity """
+                    
+                    cut_where = np.where((cut_time_arr > win_start_tmp[k]) & (cut_time_arr < win_end_tmp[k]))
+                    cut_where = cut_where[0]
+                    
+                    cut_ti = np.array(cut_time_arr[cut_where])
+                    cut_data_tmp = np.array(cut_data_arr[cut_where])
+                    
+                    cut_time.append(cut_ti)
+                    cut_data.append(cut_data_tmp)
+                    cut_len_arr.append(len(cut_ti))
             
                     """ #position data """
                     
@@ -3245,10 +3305,25 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
             
             temp_data = list(tem_data_tmp)
             temp_len_arr = np.array(tem_len_tmp)
+            
+            ct_time_tmp = []
+            ct_data_tmp = []
+            ct_len_tmp = []
+
+            for m in range(len(cut_len_arr)):
+                if cut_len_arr[m] >= 3 and not np.isnan(np.max(cut_data[m])):
+                    ct_time_tmp.append(cut_time[m])
+                    ct_data_tmp.append(cut_data[m])
+                    ct_len_tmp.append(cut_len_arr[m])
+            
+            cut_time = list(ct_time_tmp)
+            cut_data = list(ct_data_tmp)
+            cut_len_arr = np.array(ct_len_tmp)
+            
+            anis_data = []
 
             
             if len(drift_len_arr) != 0:
-                    
                 
                 min_drift_len = np.nanmin(drift_len_arr)
                 n_drift_bins = min_drift_len
@@ -3261,6 +3336,9 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                 
                 min_temp_len = np.nanmin(temp_len_arr)
                 n_temp_bins = min_temp_len
+                
+                min_cut_len = np.nanmin(cut_len_arr)
+                n_cut_bins = min_cut_len
     
                 for l in range(len(drift_time)): #this block seeks to normalize all the magnetic field data 
                                                #to the length of the shortest window
@@ -3329,6 +3407,8 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     
                     tper_time[l] = np.array(norm_tper_time)                
                     tper_data[l] = np.array(norm_tper_val)
+                    anis_data.append(np.array(norm_tper_val)/np.array(norm_tpar_val))
+                    
                     
                     temp_bin_size = temp_len_arr[l]/n_temp_bins
                     temp_ind_arr = np.arange(temp_len_arr[l])
@@ -3349,13 +3429,37 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                                         
                     temp_data[l] = np.array(norm_temp_val)
                     
+                for l in range(len(cut_time)): #this block seeks to normalize all the magnetic field data 
+                           #to the length of the shortest window
+    
+                    cut_bin_size = cut_len_arr[l]/n_cut_bins
+                    cut_ind_arr = np.arange(cut_len_arr[l])
+                    norm_cut_time = np.zeros((n_cut_bins,))
+                    norm_cut_val = np.zeros((n_cut_bins,))
+    
+                    for m in range(n_cut_bins):
+                        
+                        win_str = m*cut_bin_size
+                        win_end = (m+1)*cut_bin_size
+                        wind_where0 = np.where((cut_ind_arr>=win_str)&(cut_ind_arr<win_end))
+                        wind_where0 = wind_where0[0]
+                        cut_time_val_tmp = np.median(cut_time[l][wind_where0])
+                        cut_val_tmp = np.median(cut_data[l][wind_where0])
+                        
+                        norm_cut_time[m] = cut_time_val_tmp
+                        norm_cut_val[m] = cut_val_tmp
+    
+        
+                    cut_time[l] = np.array(norm_cut_time)                
+                    cut_data[l] = np.array(norm_cut_val)
+                    
                 if plot == 'epoch' or plot == 'all':
     
-                    savepath = '/Users/besh2109/Desktop/PSP_epoch/strahl_epoch/'
+                    savepath = '/Users/besh2109/Desktop/PSP_epoch/elec_epoch/'
     
                     if not by_Rs:
                         if i==0:
-                            savename = 'All_Events_strahl_epoch'
+                            savename = 'All_Events_elec_epoch'
                             if no_enc_7:
                                 savename = savename+'_no_7'
                             if no_enc_1:
@@ -3363,10 +3467,10 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                             
                             savename = savename+'.png'    
                         else:
-                            savename = 'Enc_'+str(i)+'_strahl_epoch.png'
+                            savename = 'Enc_'+str(i)+'_elec_epoch.png'
                     else:
                         if i==0:
-                            savename = 'All_Events_strahl_epoch'
+                            savename = 'All_Events_elec_epoch'
                             if no_enc_7:
                                 savename = savename+'_no_7'
                             if no_enc_1:
@@ -3374,164 +3478,117 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                             
                             savename = savename+'.png'       
                         else:
-                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_strahl_epoch.png'
-                
-                    fig1 = plt.figure(figsize=(15,25))
-                    axs1 = fig1.add_subplot(511)
+                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_elec_epoch.png'
+                    
+                    #-----------------------------------------------------#
+                    
+                    plt.rcParams['font.size']='20'
+                    fis1 = plt.figure(figsize=(15,15))
+                    #fis1.suptitle('Magnetic Field Unit Vector '+name, fontsize=16,y=0.92)
+                    
+                    title = ['Strahl Width','Core Drift','Electron Temperature','Temperature Anisotropy']
+                    ylabs = ['degrees','km/s','eV',r'$\frac{T\perp}{T_{||}}$']
+                    datas = [sw_data,drift_data,temp_data,anis_data]
+                    n_bins = [n_sw_bins,n_drift_bins,n_temp_bins,n_tper_bins]
+                    
+                    
+                    datamax = sw_data
                     
                     ind_hist = []
                     data_hist = []
-                    for o in range(len(sw_data)):
-                        ind = list(range(len(sw_data[o])))
-                        data = list(sw_data[o])#-sw_dur_med_arr[o])
+                    ind_line = np.linspace(-win_len,win_len+1,len(datamax[0]))
+                    median_line = np.median(np.array(datamax),0)
+                    quart_line1 = np.quantile(np.array(datamax),0.25,axis=0)
+                    quart_line2 = np.quantile(np.array(datamax),0.75,axis=0)
+                    for o in datamax:
+                        ind = list(range(len(o)))
+                        data = list(o)
                         ind_hist = ind_hist + ind
                         data_hist = data_hist + data
                         #axs1.plot(o)
-                    ind_hist_arr = np.array(ind_hist)
-                    data_hist_arr = np.array(data_hist)
+                    ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                    max_hist_arr = np.array(data_hist)
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,max_hist_arr,bins=[n_sw_bins,40])
+                    histomax = np.transpose(histo)
+                    histomax[histomax==0]=np.nan
                     
-                                
-                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_sw_bins,60])
-                    histo = np.transpose(histo)
-                    histo[histo==0]=np.nan
-        
-                    r_color = axs1.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                    
-                    #height = [-0.6,-0.6]
-                    #endpoints = [n_vel_bins/3,2*n_vel_bins/3]
-                    #axs1.scatter(endpoints,height, marker='|',s=75000, color='lime',linewidths=4, zorder=len(mag_r_data)+1)
-                    axs1.set(title='Strahl Widths minus median '+name)
-                    #axs1.set_ylim(-25,25)
-                    axs1.set_ylabel('Degrees')
-                    #axs1.set_xlabel('Normalized time')
-                    #plt.title()
-                    #plt.show()
-                    box = axs1.get_position()
-                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                    fig1.colorbar(r_color,cax=axColor, label='Counts')
-                    
-                    axs2 = fig1.add_subplot(512)
-                    
-                    ind_hist = []
-                    data_hist = []
-                    for o in range(len(drift_data)):
-                        ind = list(range(len(drift_data[o])))
-                        data = list(np.abs(drift_data[o]))#-sw_dur_med_arr[o])
-                        ind_hist = ind_hist + ind
-                        data_hist = data_hist + data
-                        #axs1.plot(o)
-                    ind_hist_arr = np.array(ind_hist)
-                    data_hist_arr = np.array(data_hist)
-                    
-                                
-                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_drift_bins,60])
-                    histo = np.transpose(histo)
-                    histo[histo==0]=np.nan
-        
-                    r_color = axs2.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                    
-                    axs2.set(title='Core Drift '+name)
-                    axs2.set_ylabel('km/s')
+                    for ii in range(4):
     
-                    box = axs2.get_position()
-                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                    fig1.colorbar(r_color,cax=axColor, label='Counts')
+                        axs = fis1.add_subplot(4,1,ii+1)
                     
-                    
-                    axs3 = fig1.add_subplot(513)
-                    
-                    ind_hist = []
-                    data_hist = []
-                    for o in range(len(tpar_data)):
-                        ind = list(range(len(tpar_data[o])))
-                        data = list(tpar_data[o]/temp_data[o])#-sw_dur_med_arr[o])
-                        ind_hist = ind_hist + ind
-                        data_hist = data_hist + data
-                        #axs1.plot(o)
-                    ind_hist_arr = np.array(ind_hist)
-                    data_hist_arr = np.array(data_hist)
-                    
-                                
-                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_tpar_bins,50])
-                    histo = np.transpose(histo)
-                    histo[histo==0]=np.nan
+                        data1 = datas[ii]
+                        
+                        if ii == 1:
+                            data1 = np.abs(data1)
+                        
+                        ind_hist = []
+                        data_hist = []
+                        ind_line = np.linspace(-win_len,win_len+1,len(data1[0]))
+                        median_line = np.median(np.array(data1),0)
+                        quart_line1 = np.quantile(np.array(data1),0.25,axis=0)
+                        quart_line2 = np.quantile(np.array(data1),0.75,axis=0)
+                        for o in data1:
+                            ind = list(range(len(o)))
+                            data = list(o)
+                            ind_hist = ind_hist + ind
+                            data_hist = data_hist + data
+                            #axs1.plot(o)
+                        ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                        data_hist_arr = np.array(data_hist)
+                        
+                        
+                        
+                        histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_bins[ii],60])
+                        histo = np.transpose(histo)
+                        histo[histo==0]=np.nan
+                        
+                        # histo = np.log(histo)
+            
+                        r_color = axs.pcolormesh(xedge,yedge,histo, cmap='magma',vmax=np.nanmax(histo))  #,np.log10(histo)
+                        
+                        axs.plot(ind_line,median_line, color='darkturquoise',linewidth=3,label='Median')
+                        axs.plot(ind_line,quart_line1, color='seagreen',linewidth=3,label='1st quantile', linestyle='dashed')
+                        axs.plot(ind_line,quart_line2, color='seagreen',linewidth=3,label='3rd quantile', linestyle='dashed')
+                        
+                        axs.tick_params(axis='both', which='major', labelsize=16)
+                        if ii==0:
+                            axs.legend(loc=(1.1,0.55))
+                            #leg = axs.legend(bbox_to_anchor=(1.01,1), loc'upper left', borderaxespad=0)
+                        if ii!=3:
+                            axs.get_xaxis().set_ticks([])
+                        else:
+                            axs.set_xlabel('Normalized Time',fontsize=18)
+                        
+                        axs.set_ylabel(ylabs[ii],fontsize=18)
+                        axs.set_title(title[ii],fontsize=16)
         
-                    r_color = axs3.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
+                        box = axs.get_position()
+                        axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+                        cbar = fis1.colorbar(r_color,cax=axColor)
+                        cbar.set_label(label='Counts', size=16)
+                        cbar.ax.tick_params(labelsize=14) 
                     
-                    axs3.set(title='Tpar/Ttot '+name)
-                    axs3.set_ylabel('Tpar/Ttot')
-    
-                    box = axs3.get_position()
-                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                    fig1.colorbar(r_color,cax=axColor, label='Counts')   
                     
-                    axs4 = fig1.add_subplot(514)
+                    plt.subplots_adjust(wspace=0, hspace=0.15)
                     
-                    ind_hist = []
-                    data_hist = []
-                    for o in range(len(tper_data)):
-                        ind = list(range(len(tper_data[o])))
-                        data = list(tper_data[o]/temp_data[o])#-sw_dur_med_arr[o])
-                        ind_hist = ind_hist + ind
-                        data_hist = data_hist + data
-                        #axs1.plot(o)
-                    ind_hist_arr = np.array(ind_hist)
-                    data_hist_arr = np.array(data_hist)
+                    # plt.show()
                     
-                                
-                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_tper_bins,50])
-                    histo = np.transpose(histo)
-                    histo[histo==0]=np.nan
-        
-                    r_color = axs4.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
+                    # breakpoint()
                     
-                    axs4.set(title='Tper/Ttot '+name)
-                    axs4.set_ylabel('Tper/Ttot')
-    
-                    box = axs4.get_position()
-                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                    fig1.colorbar(r_color,cax=axColor, label='Counts')
-                    
-                    axs5 = fig1.add_subplot(515)
-                    
-                    ind_hist = []
-                    data_hist = []
-                    for o in range(len(temp_data)):
-                        ind = list(range(len(temp_data[o])))
-                        data = list(tper_data[o]/tpar_data[o])#-sw_dur_med_arr[o])
-                        ind_hist = ind_hist + ind
-                        data_hist = data_hist + data
-                        #axs1.plot(o)
-                    ind_hist_arr = np.array(ind_hist)
-                    data_hist_arr = np.array(data_hist)
-                    
-                                
-                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_tpar_bins,50])
-                    histo = np.transpose(histo)
-                    histo[histo==0]=np.nan
-        
-                    r_color = axs5.pcolormesh(xedge,yedge,histo, cmap='jet')  #,np.log10(histo)
-                    
-                    axs5.set(title='Temperature Anisotropy '+name)
-                    axs5.set_ylabel('Tper/Tpar')
-    
-                    box = axs5.get_position()
-                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                    fig1.colorbar(r_color,cax=axColor, label='Counts')
                     
                     plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
                     plt.clf()
                     plt.cla()
                     plt.close('all')
-                    plt.close(fig1)
+                    plt.close(fis1)
                     
                 if plot == 'dist' or plot == 'all':
     
-                    savepath = '/Users/besh2109/Desktop/PSP_epoch/strahl_dist/'
+                    savepath = '/Users/besh2109/Desktop/PSP_epoch/elec_dist/'
     
                     if not by_Rs:
                         if i==0:
-                            savename = 'All_Events_strahl_dist'
+                            savename = 'All_Events_elec_dist'
                             if no_enc_7:
                                 savename = savename+'_no_7'
                             if no_enc_1:
@@ -3539,10 +3596,10 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                             
                             savename = savename+'.png'    
                         else:
-                            savename = 'Enc_'+str(i)+'_strahl_dist.png'
+                            savename = 'Enc_'+str(i)+'_elec_dist.png'
                     else:
                         if i==0:
-                            savename = 'All_Events_strahl_dist'
+                            savename = 'All_Events_elec_dist'
                             if no_enc_7:
                                 savename = savename+'_no_7'
                             if no_enc_1:
@@ -3550,7 +3607,7 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                             
                             savename = savename+'.png'       
                         else:
-                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_strahl_dist.png'
+                            savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_elec_dist.png'
                 
                     fig1 = plt.figure(figsize=(15,15))
                     axs1 = fig1.add_subplot(221)
@@ -3576,37 +3633,40 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     j1=0
                     dist1sw = np.zeros(histo[:,0].shape)
                     while k1 < round(n_sw_bins/3): #distribution 1
-                        dist1sw = dist1sw + histo[:,k1]/np.sum(histo[:,k1])
+                        dist1sw = dist1sw + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
                     
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=round(n_sw_bins/3)
                     dist2sw = np.zeros(histo[:,0].shape)
                     while k1 >= round(n_sw_bins/3) and k1 < round(2*n_sw_bins/3): #distribution 2
-                        dist2sw = dist2sw + histo[:,k1]/np.sum(histo[:,k1])
+                        dist2sw = dist2sw + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=round(2*n_sw_bins/3)
                     dist3sw = np.zeros(histo[:,0].shape)
                     while k1 >= round(2*n_sw_bins/3) and k1<n_sw_bins: #distribution 3
-                        dist3sw = dist3sw + histo[:,k1]/np.sum(histo[:,k1])
+                        dist3sw = dist3sw + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     
                     #ax2.set_aspect(1)
                     #ax2.set_adjustable('box')
                     norm_val = np.nanmax(dist2sw)
-                    axs1.plot(yedge[1:len(yedge)],dist1sw/norm_val,color='red',label='before wave')
-                    axs1.plot(yedge[1:len(yedge)],dist2sw/norm_val,color='green',label='during wave')
-                    axs1.plot(yedge[1:len(yedge)],dist3sw/norm_val,color='blue',label='after wave')
+                    norm1 = np.sum(dist1sw)
+                    norm2 = np.sum(dist2sw)
+                    norm3 = np.sum(dist3sw)
+                    axs1.plot(yedge[1:len(yedge)],dist1sw/norm1,color='red',label='before region')
+                    axs1.plot(yedge[1:len(yedge)],dist2sw/norm2,color='green',label='during region')
+                    axs1.plot(yedge[1:len(yedge)],dist3sw/norm3,color='blue',label='after region')
                     axs1.legend()
                     #ax2.set_ylim([0,26])
-                    axs1.set_title('Strahl Widths minus median '+name)
+                    axs1.set_title('Strahl Widths '+name)
                     axs1.set_ylabel('Normalized Counts Distribution')
                     axs1.set_xlabel('Degrees')
                     axs1.set_adjustable('box')
@@ -3634,34 +3694,37 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     j1=0
                     dist1dr = np.zeros(histo[:,0].shape)
                     while k1 < math.ceil(n_drift_bins/3): #distribution 1
-                        dist1dr = dist1dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist1dr = dist1dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
                     
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=math.ceil(n_drift_bins/3)
                     dist2dr = np.zeros(histo[:,0].shape)
                     while k1 >= math.floor(n_drift_bins/3) and k1 < math.ceil(2*n_drift_bins/3): #distribution 2
-                        dist2dr = dist2dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist2dr = dist2dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=math.ceil(2*n_drift_bins/3)
                     dist3dr = np.zeros(histo[:,0].shape)
                     while k1 >= math.floor(2*n_drift_bins/3) and k1<n_drift_bins: #distribution 3
-                        dist3dr = dist3dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist3dr = dist3dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     
                     #ax2.set_aspect(1)
                     #ax2.set_adjustable('box')
                     norm_val = np.nanmax(dist2dr)
-                    axs2.plot(yedge[1:len(yedge)],dist1dr/norm_val,color='red',label='before wave')
-                    axs2.plot(yedge[1:len(yedge)],dist2dr/norm_val,color='green',label='during wave')
-                    axs2.plot(yedge[1:len(yedge)],dist3dr/norm_val,color='blue',label='after wave')
+                    norm1 = np.sum(dist1dr)
+                    norm2 = np.sum(dist2dr)
+                    norm3 = np.sum(dist3dr)
+                    axs2.plot(yedge[1:len(yedge)],dist1dr/norm1,color='red',label='before region')
+                    axs2.plot(yedge[1:len(yedge)],dist2dr/norm2,color='green',label='during region')
+                    axs2.plot(yedge[1:len(yedge)],dist3dr/norm3,color='blue',label='after region')
                     axs2.legend()
                     #ax2.set_ylim([0,26])
                     axs2.set_title('Core Drift '+name)
@@ -3674,9 +3737,9 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     
                     ind_hist = []
                     data_hist = []
-                    for o in range(len(tpar_data)):
-                        ind = list(range(len(tpar_data[o])))
-                        data = list(tpar_data[o]/temp_data[o])#-sw_dur_med_arr[o])
+                    for o in range(len(anis_data)):
+                        ind = list(range(len(anis_data[o])))
+                        data = list(anis_data[o])#/temp_data[o])#-sw_dur_med_arr[o])
                         ind_hist = ind_hist + ind
                         data_hist = data_hist + data
                         #axs1.plot(o)
@@ -3693,48 +3756,51 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     j1=0
                     dist1dr = np.zeros(histo[:,0].shape)
                     while k1 < math.ceil(n_tpar_bins/3): #distribution 1
-                        dist1dr = dist1dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist1dr = dist1dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
                     
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=math.ceil(n_tpar_bins/3)
                     dist2dr = np.zeros(histo[:,0].shape)
                     while k1 >= math.floor(n_tpar_bins/3) and k1 < math.ceil(2*n_tpar_bins/3): #distribution 2
-                        dist2dr = dist2dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist2dr = dist2dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=math.ceil(2*n_tpar_bins/3)
                     dist3dr = np.zeros(histo[:,0].shape)
                     while k1 >= math.floor(2*n_tpar_bins/3) and k1<n_tpar_bins: #distribution 3
-                        dist3dr = dist3dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist3dr = dist3dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     
                     #ax2.set_aspect(1)
                     #ax2.set_adjustable('box')
                     norm_val = np.nanmax(dist2dr)
-                    axs3.plot(yedge[1:len(yedge)],dist1dr/norm_val,color='red',label='before wave')
-                    axs3.plot(yedge[1:len(yedge)],dist2dr/norm_val,color='green',label='during wave')
-                    axs3.plot(yedge[1:len(yedge)],dist3dr/norm_val,color='blue',label='after wave')
+                    norm1 = np.sum(dist1dr)
+                    norm2 = np.sum(dist2dr)
+                    norm3 = np.sum(dist3dr)
+                    axs3.plot(yedge[1:len(yedge)],dist1dr/norm1,color='red',label='before region')
+                    axs3.plot(yedge[1:len(yedge)],dist2dr/norm2,color='green',label='during region')
+                    axs3.plot(yedge[1:len(yedge)],dist3dr/norm3,color='blue',label='after region')
                     axs3.legend()
                     #ax2.set_ylim([0,26])
-                    axs3.set_title('Tpar/Ttot '+name)
+                    axs3.set_title('Temperature Anisotropy '+name)
                     axs3.set_ylabel('Normalized Counts Distribution')
-                    axs3.set_xlabel('Tpar/Ttot')
+                    axs3.set_xlabel(r'$\frac{T\perp}{T_{||}}$')
                     axs3.set_adjustable('box')
                     
                     axs4 = fig1.add_subplot(224)
                     
                     ind_hist = []
                     data_hist = []
-                    for o in range(len(tper_data)):
-                        ind = list(range(len(tper_data[o])))
-                        data = list(temp_data[o])#-sw_dur_med_arr[o])
+                    for o in range(len(cut_data)):
+                        ind = list(range(len(cut_data[o])))
+                        data = list(cut_data[o])#/temp_data[o])#-sw_dur_med_arr[o])
                         ind_hist = ind_hist + ind
                         data_hist = data_hist + data
                         #axs1.plot(o)
@@ -3742,7 +3808,7 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     data_hist_arr = np.array(data_hist)
                     
                                 
-                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_tper_bins,50])
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_cut_bins,20])
                     histo = np.transpose(histo)
                     #histo[histo==0]=np.nan
         
@@ -3751,39 +3817,43 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     j1=0
                     dist1dr = np.zeros(histo[:,0].shape)
                     while k1 < math.ceil(n_tper_bins/3): #distribution 1
-                        dist1dr = dist1dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist1dr = dist1dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
                     
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=math.ceil(n_tper_bins/3)
                     dist2dr = np.zeros(histo[:,0].shape)
                     while k1 >= math.floor(n_tper_bins/3) and k1 < math.ceil(2*n_tper_bins/3): #distribution 2
-                        dist2dr = dist2dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist2dr = dist2dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     j1=0
                     k1=math.ceil(2*n_tper_bins/3)
                     dist3dr = np.zeros(histo[:,0].shape)
                     while k1 >= math.floor(2*n_tper_bins/3) and k1<n_tper_bins: #distribution 3
-                        dist3dr = dist3dr + histo[:,k1]/np.sum(histo[:,k1])
+                        dist3dr = dist3dr + histo[:,k1]#/np.sum(histo[:,k1])
                         k1+=1
                         j1+=1
-                    print(j1)
+                    #print(j1)
                     
                     #ax2.set_aspect(1)
                     #ax2.set_adjustable('box')
                     norm_val = np.nanmax(dist2dr)
-                    axs4.plot(yedge[1:len(yedge)],dist1dr/norm_val,color='red',label='before wave')
-                    axs4.plot(yedge[1:len(yedge)],dist2dr/norm_val,color='green',label='during wave')
-                    axs4.plot(yedge[1:len(yedge)],dist3dr/norm_val,color='blue',label='after wave')
+                    norm1 = np.sum(dist1dr)
+                    norm2 = np.sum(dist2dr)
+                    norm3 = np.sum(dist3dr)
+                    axs4.plot(yedge[1:len(yedge)],dist1dr/norm1,color='red',label='before region')
+                    axs4.plot(yedge[1:len(yedge)],dist2dr/norm2,color='green',label='during region')
+                    axs4.plot(yedge[1:len(yedge)],dist3dr/norm3,color='blue',label='after region')
                     axs4.legend()
                     #ax2.set_ylim([0,26])
-                    axs4.set_title('Tper/Ttot '+name)
+                    axs4.set_title('Sunward Cutoff Speed '+name)
+                    #axs4.set_title('TEMPERATURE!!!! '+name)
                     axs4.set_ylabel('Normalized Counts Distribution')
-                    axs4.set_xlabel('Tper/Ttot')
+                    axs4.set_xlabel('km/s')
                     axs4.set_adjustable('box')
                     
          
@@ -3793,3 +3863,1225 @@ def elec_epoch(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1, by_Rs=Fal
                     plt.close('all')
                     plt.close(fig1)
         i+=1
+        
+def print_numbers(wavelen=90, no_enc_1=False, no_enc_7=False):
+    
+
+    csv_filename = 'harmwave_master_arch.csv'
+    # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+    csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+   
+    df = pd.read_csv(csv_path+csv_filename)
+    bf = df.to_numpy()
+
+    if no_enc_7: # this portion of code kills events in encounter 7
+        dates = list(bf[:,0])     # when doing the overview picture w/ all encounters
+        for j in range(len(dates)):
+            dates[j] = dates[j][0:4]
+        npdates = np.array(dates)
+        bf = np.delete(bf,npdates=='2021',0)
+        
+    if no_enc_1: #this portion of code kills events in encounter 1
+        dates = list(bf[:,0])
+        for j in range(len(dates)):
+            dates[j] = dates[j][0:4]
+        npdates = np.array(dates)
+        bf = np.delete(bf,npdates=='2018',0)
+    
+    total = np.delete(bf,bf[:,1]<wavelen,0)
+    total_date_flt = np.array(pys.time_float(total[:,0]))
+    total_Rs = np.array(total[:,2])
+    # print(total[:,1])
+    # print(pys.time_string(enc_flt[0]))
+    # print(pys.time_string(enc_flt[1]))
+    # print(pys.time_string(enc_flt[2]))
+    # print(pys.time_string(enc_flt[3]))
+    # print(pys.time_string(enc_flt[4]))
+    # print(pys.time_string(enc_flt[5]))
+    # print(pys.time_string(enc_flt[6]))
+    
+    # print(~((total_date_flt>enc_flt[1][0])&(total_date_flt<enc_flt[1][1])))
+    
+    no7 = np.delete(total,((total_date_flt>enc_flt[6][0])&(total_date_flt<enc_flt[6][1])),0)
+    
+    enc1 = np.delete(total,~((total_date_flt>enc_flt[0][0])&(total_date_flt<enc_flt[0][1])),0)
+    enc2 = np.delete(total,~((total_date_flt>enc_flt[1][0])&(total_date_flt<enc_flt[1][1])),0)
+    enc3 = np.delete(total,~((total_date_flt>enc_flt[2][0])&(total_date_flt<enc_flt[2][1])),0)
+    enc4 = np.delete(total,~((total_date_flt>enc_flt[3][0])&(total_date_flt<enc_flt[3][1])),0)
+    enc5 = np.delete(total,~((total_date_flt>enc_flt[4][0])&(total_date_flt<enc_flt[4][1])),0)
+    enc6 = np.delete(total,~((total_date_flt>enc_flt[5][0])&(total_date_flt<enc_flt[5][1])),0)
+    enc7 = np.delete(total,~((total_date_flt>enc_flt[6][0])&(total_date_flt<enc_flt[6][1])),0)
+
+    Rs5045 = np.delete(total,~((total_Rs>Rs_grps[0][1])&(total_Rs<Rs_grps[0][0])),0)
+    Rs4540 = np.delete(total,~((total_Rs>Rs_grps[1][1])&(total_Rs<Rs_grps[1][0])),0)
+    Rs4035 = np.delete(total,~((total_Rs>Rs_grps[2][1])&(total_Rs<Rs_grps[2][0])),0)
+    Rs3530 = np.delete(total,~((total_Rs>Rs_grps[3][1])&(total_Rs<Rs_grps[3][0])),0)
+    Rs3025 = np.delete(total,~((total_Rs>Rs_grps[4][1])&(total_Rs<Rs_grps[4][0])),0)
+    Rs2520 = np.delete(total,~((total_Rs>Rs_grps[5][1])&(total_Rs<Rs_grps[5][0])),0)
+    Rs20less = np.delete(total,~((total_Rs>Rs_grps[6][1])&(total_Rs<Rs_grps[6][0])),0)
+    
+    enc1_tot = round(len(enc1)/len(total)*100,2)
+    enc2_tot = round(len(enc2)/len(total)*100,2)
+    enc3_tot = round(len(enc3)/len(total)*100,2)
+    enc4_tot = round(len(enc4)/len(total)*100,2)
+    enc5_tot = round(len(enc5)/len(total)*100,2)
+    enc6_tot = round(len(enc6)/len(total)*100,2)
+    enc7_tot = round(len(enc7)/len(total)*100,2)
+    
+    Rs5045_tot =  round(len(Rs5045)/len(total)*100,2)
+    Rs4540_tot =  round(len(Rs4540)/len(total)*100,2)
+    Rs4035_tot =  round(len(Rs4035)/len(total)*100,2)
+    Rs3530_tot =  round(len(Rs3530)/len(total)*100,2)
+    Rs3025_tot =  round(len(Rs3025)/len(total)*100,2)
+    Rs2520_tot =  round(len(Rs2520)/len(total)*100,2)
+    Rs20less_tot =  round(len(Rs20less)/len(total)*100,2)
+    
+    duration = np.round(np.sum(total[:,1])/3600,1)
+    durationno7 = np.round(np.sum(no7[:,1])/3600,1)
+    
+    print(duration)
+    print(durationno7)
+
+    print()
+    print('Waves greater than '+str(wavelen)+' seconds.')
+    print()
+    print('Total waves:', len(total))
+    print()
+    print('Encounter 1 waves:', len(enc1),' Encounter 1 event time:', np.round(np.sum(enc1[:,1])/3600,1), ' hours')
+    print('Encounter 2 waves:', len(enc2),' Encounter 2 event time:', np.round(np.sum(enc2[:,1])/3600,1), ' hours')
+    print('Encounter 3 waves:', len(enc3),' Encounter 3 event time:', np.round(np.sum(enc3[:,1])/3600,1), ' hours')
+    print('Encounter 4 waves:', len(enc4),' Encounter 4 event time:', np.round(np.sum(enc4[:,1])/3600,1), ' hours')
+    print('Encounter 5 waves:', len(enc5),' Encounter 5 event time:', np.round(np.sum(enc5[:,1])/3600,1), ' hours')
+    print('Encounter 6 waves:', len(enc6),' Encounter 6 event time:', np.round(np.sum(enc6[:,1])/3600,1), ' hours')
+    print('Encounter 7 waves:', len(enc7),' Encounter 7 event time:', np.round(np.sum(enc7[:,1])/3600,1), ' hours')
+    print()
+    print('Waves between 50 and 45 Rs:', len(Rs5045), ' Time spanned by 50 and 45 Rs:',np.round(np.sum(Rs5045[:,1])/3600,1),' hours')
+    print('Waves between 45 and 40 Rs:', len(Rs4540), ' Time spanned by 45 and 40 Rs:',np.round(np.sum(Rs4540[:,1])/3600,1),' hours')
+    print('Waves between 40 and 35 Rs:', len(Rs4035), ' Time spanned by 40 and 35 Rs:',np.round(np.sum(Rs4035[:,1])/3600,1),' hours')
+    print('Waves between 35 and 30 Rs:', len(Rs3530), ' Time spanned by 35 and 30 Rs:',np.round(np.sum(Rs3530[:,1])/3600,1),' hours')
+    print('Waves between 30 and 25 Rs:', len(Rs3025), ' Time spanned by 30 and 25 Rs:',np.round(np.sum(Rs3025[:,1])/3600,1),' hours')
+    print('Waves between 25 and 20 Rs:', len(Rs2520), ' Time spanned by 25 and 20 Rs:',np.round(np.sum(Rs2520[:,1])/3600,1),' hours')
+    print()
+    print('Encounter 1 percentage of total:', enc1_tot,'%')
+    print('Encounter 2 percentage of total:', enc2_tot,'%')
+    print('Encounter 3 percentage of total:', enc3_tot,'%')
+    print('Encounter 4 percentage of total:', enc4_tot,'%')
+    print('Encounter 5 percentage of total:', enc5_tot,'%')
+    print('Encounter 6 percentage of total:', enc6_tot,'%')
+    print('Encounter 7 percentage of total:', enc7_tot,'%')
+    print()
+    print('Percentage between 50 and 45 Rs:', Rs5045_tot,'%')
+    print('Percentage between 45 and 40 Rs:', Rs4540_tot,'%')
+    print('Percentage between 40 and 35 Rs:', Rs4035_tot,'%')
+    print('Percentage between 35 and 30 Rs:', Rs3530_tot,'%')
+    print('Percentage between 30 and 25 Rs:', Rs3025_tot,'%')
+    print('Percentage between 25 and 20 Rs:', Rs2520_tot,'%')
+    print('Percentage less than 20 Rs:', Rs20less_tot,'%')
+    
+def core_check(wavelen= 90, win_len=1, datatype='coredrift'):
+    csv_filename = 'harmwave_master_arch.csv'
+    csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+        
+    drift_path = '/Users/besh2109/Desktop/psp_electrons/'
+    drift_file = 'coredrift_e1toe8.tplot'
+    
+    temp_path = '/Users/besh2109/Desktop/psp_electrons/'
+    temp_file = 'coret_e1toe8.tplot'
+    
+    cut_path = '/Users/besh2109/Desktop/psp_electrons/'
+    cut_file = 'cutoffs_e1toe7.tplot'
+
+    df = pd.read_csv(csv_path+csv_filename)
+    bf = df.to_numpy()
+    
+    af = np.delete(bf,bf[:,1]<wavelen,0)
+    
+    dates = list(af[:,0])
+    for j in range(len(dates)):
+        dates[j] = dates[j][0:10]
+    
+    uniq_dates = np.unique(dates)
+    date_flt = pys.time_float(uniq_dates)
+    uniq_next = pys.time_string(np.array(date_flt)+86400.)
+    
+    wave_start = np.array(pys.time_float(af[:,0]))
+    
+    wave_end = np.array(wave_start+af[:,1])
+    
+    window_start = np.array(wave_start - win_len*af[:,1])#*(1/3)) #complete epoch analysis for window larger than wave itself
+    window_end = np.array(wave_end + win_len*af[:,1])#*(1/3))     #want to see if theres a difference between times during and before/after events
+    
+    pyt.tplot_restore(drift_path+drift_file)
+    pyt.tplot_restore(temp_path+temp_file)
+    pyt.tplot_restore(cut_path+cut_file)
+    
+    drift_data_tmp = pyt.get_data('coredrift')
+    
+    drift_time_arr = drift_data_tmp[0]
+    drift_data_arr = np.abs(drift_data_tmp[1])
+    drift_time_arr = np.delete(drift_time_arr,np.isnan(drift_data_arr))
+    drift_data_arr = np.delete(drift_data_arr,np.isnan(drift_data_arr))
+    
+    tper_data_tmp = pyt.get_data('coretperp')
+    tpar_data_tmp = pyt.get_data('coretpar')
+    
+    tper_time_arr = tper_data_tmp[0]
+    tper_data_arr = tper_data_tmp[1]
+    
+    tpar_time_arr = tpar_data_tmp[0]
+    tpar_data_arr = tpar_data_tmp[1]
+    
+    temp_time_arr = tper_time_arr
+    temp_data_arr = np.array(2*tper_data_arr+tpar_data_arr)/3
+    
+    temp_time_arr = np.delete(temp_time_arr,np.isnan(temp_data_arr))
+    temp_data_arr = np.delete(temp_data_arr,np.isnan(temp_data_arr))
+    
+    anis_time_arr = tper_time_arr
+    anis_data_arr = np.array(tper_data_arr/tpar_data_arr)
+    
+    anis_time_arr = np.delete(anis_time_arr,np.isnan(anis_data_arr))
+    anis_data_arr = np.delete(anis_data_arr,np.isnan(anis_data_arr))
+    
+    cut_data_tmp = pyt.get_data('cutoff_sunward')
+    
+    cut_time_arr = cut_data_tmp[0]
+    cut_data_arr = cut_data_tmp[1]
+    cut_time_arr = np.delete(cut_time_arr,np.isnan(cut_data_arr))
+    cut_data_arr = np.delete(cut_data_arr,np.isnan(cut_data_arr))
+    
+    if datatype == 'coredrift':
+        time_arr = drift_time_arr
+        data_arr = drift_data_arr
+        savepath = '/Users/besh2109/Desktop/psp_electrons/core_dists/'
+        savetag = 'driftplot_'
+        name = 'Core Drift'
+        units = 'km/s'
+    elif datatype == 'temp':
+        time_arr = temp_time_arr
+        data_arr = temp_data_arr  
+        savepath = '/Users/besh2109/Desktop/psp_electrons/temp_dists/'
+        savetag = 'tempplot_'
+        name = 'Temperature'
+        units = 'eV'
+    elif datatype == 'anis':
+        time_arr = anis_time_arr
+        data_arr = anis_data_arr    
+        savepath = '/Users/besh2109/Desktop/psp_electrons/anis_dists/'
+        savetag = 'elecanisplot_'
+        name = 'Temperature Anisotropy'
+        units = 'Tper/Tpar'
+    elif datatype == 'cutoff':
+        time_arr = cut_time_arr
+        data_arr = cut_data_arr    
+        savepath = '/Users/besh2109/Desktop/psp_electrons/cut_dists/'
+        savetag = 'cutoffplot_'
+        name = 'Sunward Cutoff Speed'
+        units = 'km/s'
+        
+    # for j in range(len(uniq_dates)):
+            
+    #     day_t0 = pys.time_float(uniq_dates[j])
+    #     day_tf = pys.time_float(uniq_next[j])
+    enchistlist = []
+    enccenlist = []
+    wavehistlist = []
+    wavecenlist = []
+    evnt_num_list = []
+    # for i in range(len(per_flt)-1):
+    for i in range(6):
+        
+        enc_t0 = enc_flt[i][0]
+        enc_tf = enc_flt[i][1]
+        # if day_t0 > enc_t0 and day_t0 < enc_tf:
+        enc_where = np.where((time_arr > enc_t0) & (time_arr < enc_tf))
+        enc_where = enc_where[0]
+        enc_num = i+1
+        # enc_0 = enc_flt[i][0]
+        # enc_f = enc_flt[i][1]
+        
+        
+        # date_strt_flt = pys.time_float(uniq_dates[j])
+        # date_end_flt = pys.time_float(uniq_next[j])
+    
+        # daywhere = np.where(np.logical_and(wave_start>date_strt_flt,wave_start<date_end_flt))
+        encwhere = np.where(np.logical_and(wave_start>enc_t0,wave_start<enc_tf))
+        win_start_tmp = np.array(window_start[encwhere])
+        win_end_tmp = np.array(window_end[encwhere])
+        wv_start = np.array(wave_start[encwhere])
+        wv_end = np.array(wave_end[encwhere])
+    
+        # day_where = np.where((drift_time_arr > day_t0) & (drift_time_arr < day_tf))
+        # day_where = day_where[0]
+    
+        data = np.array([])
+        evnt_num = len(win_start_tmp)
+        
+        for k in range(len(win_start_tmp)):
+            data_where = np.where((time_arr > win_start_tmp[k]) & (time_arr < win_end_tmp[k]))
+            data_where = data_where[0]
+            #print(drift_where)
+            data_ti = np.array(time_arr[data_where])
+            data_tmp = data_arr[data_where]
+            #print(drift_data_tmp.shape)
+            data= np.append(data,data_tmp)
+       
+        # if len(day_where) !=0:
+        if enc_num != 3:
+            # fig = plt.figure(figsize=(20,10))    
+            # ax1 = fig.add_subplot(121)
+            evnt_num_list.append(evnt_num)
+            
+            fig = plt.figure(figsize=(10,10))    
+            ax1 = fig.add_subplot(111)
+            
+            enc_hist,enc_edge = np.histogram(data_arr[enc_where], bins=20)
+            enccenters = (enc_edge[:-1] + enc_edge[1:]) / 2
+            wave_hist,wave_edge = np.histogram(data,bins=20)
+            wavecenters = (wave_edge[:-1] + wave_edge[1:]) / 2
+            
+            ax1.plot(enccenters,enc_hist/np.nanmax(enc_hist),label='Encounter '+str(enc_num)+' '+name)
+            ax1.plot(wavecenters,wave_hist/np.nanmax(wave_hist),label='Events '+name)
+            ax1.text(0.6,0.7,str(evnt_num)+' total events',transform=ax1.transAxes,fontsize=16)
+            ax1.set_title('Enc '+str(enc_num)+' '+name,fontsize=20)#+uniq_dates[j]
+            ax1.set_ylabel('Normalized Counts Distribution',fontsize=18)
+            ax1.tick_params(axis='y',labelsize=14)
+            ax1.set_xlabel(units,fontsize=18)
+            ax1.tick_params(axis='x',labelsize=14)
+            ax1.legend(fontsize=14)
+            
+            """
+            I'm having a lot of trouble making the curves fit for some reason... Not worth the time right now.
+            """
+            
+            # ax2 = fig.add_subplot(122)
+            
+            # xvalsenc = enccenters
+            # xvalswave = wavecenters
+            
+            # yvalsenc = np.array(enc_hist/np.nanmax(enc_hist))
+            # yvalswave = np.array(wave_hist/np.nanmax(wave_hist))
+            # model = GaussianModel() #SkewedGaussianModel()
+           
+            # paramsenc = model.make_params(amplitude=1, center=1, sigma=1, gamma=0)
+            # resultenc = model.fit(yvalsenc, paramsenc, x=xvalsenc)
+            
+            # paramswave = model.make_params(amplitude=1, center=1, sigma=1, gamma=0)
+            # resultwave = model.fit(yvalswave, paramswave, x=xvalswave)
+    
+
+            # per_shift = np.round(((resultwave.best_values['center'] - resultenc.best_values['center'])/resultenc.best_values['center'])*100,1)
+            # per_shift_text = 'Fit center shift percentage: '+str(per_shift)+'%'
+            # chi_sqr_text = 'Chi Square: '+str(resultwave.chisqr) 
+                            
+            # ax2.plot(enccenters,resultenc.best_fit,color='blue',label='Encounter '+str(enc_num)+' '+name+' Fit Dist')
+            # ax2.plot(wavecenters,resultwave.best_fit,color='orange',label='Events '+name+' Dist')
+            # ax2.text(0.56,0.75,per_shift_text, transform=ax2.transAxes)
+            # ax2.text(0.56,0.73,chi_sqr_text, transform=ax2.transAxes)
+            
+            # ax2.legend()
+
+            # ax2.set_title(name+' Skewed Gauss Fit Enc '+str(enc_num))
+            # ax2.set_ylabel('Normalized Counts Distribution')
+            # ax2.set_xlabel(units)
+            # ax2.set_adjustable('box')
+            
+        
+            savename = savetag + 'enc'+str(enc_num)+'.png'
+            plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
+            plt.clf()
+            plt.cla()
+            plt.close('all')
+            plt.close(fig)
+            
+
+            enchistlist.append(enc_hist)
+            enccenlist.append(enccenters)
+            wavehistlist.append(wave_hist)
+            wavecenlist.append(wavecenters)
+            
+    """ 5 times plot """
+    plotshape = [(0,0),(0,2),(0,4),(1,1),(1,3)]
+    enc_num = [1,2,4,5,6]
+    fig = plt.figure(figsize=(22.5,15))
+    
+    exclude_ax = [1,2,4]
+    
+    for i in range(5):
+        
+        evnt_num = evnt_num_list[i]
+        
+        axs = plt.subplot2grid(shape=(2,6), loc=plotshape[i], colspan=2)
+        
+        enc_hist = enchistlist[i]
+        enc_cent = enccenlist[i]
+        wave_hist = wavehistlist[i]
+        wave_cent = wavecenlist[i]
+        
+        axs.plot(enc_cent,enc_hist/np.nanmax(enc_hist),label='Enc '+str(enc_num[i])+' '+name)
+        axs.plot(wave_cent,wave_hist/np.nanmax(wave_hist),label='Events '+name)
+        axs.text(0.6,0.7,str(evnt_num)+' total events',transform=axs.transAxes,fontsize=16)
+        axs.set_title('Enc '+str(enc_num[i])+' '+name,fontsize=20)#+uniq_dates[j]
+        
+        
+        if i in exclude_ax:
+            axs.get_yaxis().set_visible(False)
+        
+        axs.set_ylabel('Normalized Counts Distribution',fontsize=18)
+        axs.tick_params(axis='y',labelsize=18)
+        axs.set_xlabel(units,fontsize=18)
+        axs.tick_params(axis='x',labelsize=18)
+        axs.legend(fontsize=16,loc='upper right')
+            
+    savename = savetag + '.png'
+
+    plt.savefig(savepath+savename, bbox_inches = 'tight' ,pad_inches = 0.2)
+    plt.clf()
+    plt.cla()
+    plt.close('all')
+    plt.close(fig)
+        
+def output_dates(wavelen=90, no_enc_1=True, no_enc_7=True, enc='all',rand=False,rand_num=None):
+    csv_filename = 'harmwave_master_arch.csv'
+    csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+    out_tag = ''
+    
+    if enc != 'all':
+        csv_filename = 'enc_'+str(enc)+'_harmwave_arch.csv'
+        out_tag = '_enc_'+str(enc)
+    
+    if rand == True:
+        out_tag = out_tag+'_rand'
+    
+    csv_savepath = '/Users/besh2109/Desktop/PSP_epoch/wave_dates/random_dates/'
+    csv_savename = 'output_dates'+out_tag+'.csv'
+    
+    df = pd.read_csv(csv_path+csv_filename)
+    bf = df.to_numpy()
+
+    if no_enc_7: # this portion of code kills events in encounter 7
+        dates = list(bf[:,0])     # when doing the overview picture w/ all encounters
+        for j in range(len(dates)):
+            dates[j] = dates[j][0:4]
+        npdates = np.array(dates)
+        bf = np.delete(bf,npdates=='2021',0)
+        
+    if no_enc_1: #this portion of code kills events in encounter 1
+        dates = list(bf[:,0])
+        for j in range(len(dates)):
+            dates[j] = dates[j][0:4]
+        npdates = np.array(dates)
+        bf = np.delete(bf,npdates=='2018',0)
+    
+    total = np.delete(bf,bf[:,1]<wavelen,0)
+    
+    if rand == True:
+        if rand_num == None: #if random is true but you forget to set a number, set to 10
+            rand_num = 10
+        
+        index_list = list(range(len(total[:,0])))
+    
+        total_list = np.random.choice(index_list,rand_num,replace=False)
+        #total = np.delete(total,total[:,0] not in total_list,0)
+        total=total[total_list,:]
+
+    total_date_flt = np.array(pys.time_float(total[:,0]))
+    total_end_flt = np.array(total_date_flt+total[:,1])
+    
+    total_date = pys.time_string(total_date_flt)#,fmt='%Y-%m-%d/%H:%M:%S')
+    total_end = pys.time_string(total_end_flt)#,fmt='%Y-%m-%d/%H:%M:%S')
+    
+    # print(len(total_date_flt),len(total_end_flt))
+    # print(pys.time_string(total_date_flt[0]),pys.time_string(total_end_flt[0]))
+    
+    output_arr = np.transpose([total_date,total_end,total[:,1]])
+    #print(output_arr)
+    output_df = pd.DataFrame(output_arr, columns = ['Start Date','End Date','Duration in Seconds'])
+    #print(output_df)
+    output_df.to_csv(csv_savepath+csv_savename,index=False,date_format='%Y-%m-%d/%H:%M:%S')
+    
+def ion_epoch_2(plot='epoch',no_enc_7=False, no_enc_1=False, win_len=1,resolution=10, by_Rs=False,wavelen=90):
+    i=0
+    enc_num = len(per_flt)-1
+    while i <= enc_num: 
+        
+        Rs = 6.957e5 #solar radius in km
+        w = 2*np.pi/(25.38*86400) # angular frequency of the sun in degrees/sec
+        
+        v = 400000 #m/s typical slow solar wind speed, may replace later with measurement values
+        mu = 4*np.pi*1e-7 #mu naught
+        eVtoJ = 1.60218*1e-19 #eV to J
+        #kb = 1.380649*10e-23 #boltzmann constant, J/K
+        if i == 1:
+            i+=1
+        if not by_Rs:
+            if i==0:
+                csv_filename = 'harmwave_master_arch.csv'
+                # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+                if no_enc_7:
+                    name = 'All Encounters sans 7'
+                elif no_enc_1:
+                    name = 'All Encounters sans 1'
+                else:
+                    name = 'All Encounters'
+            else:
+                csv_filename = 'enc_'+str(i)+'_harmwave_arch.csv'
+                # csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
+                csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+                savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/histograms/'
+                savename = 'Enc_'+str(i)+'_mag_epoch.png'
+                name = 'Encounter '+str(i)
+        
+        else:
+            csv_filename = 'harmwave_master_arch.csv'
+            # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+            csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+            if i==0:
+                if no_enc_7:
+                    name = 'All Radial Distances sans Enc 7'
+                elif no_enc_1:
+                    name = 'All Radial Distances sans Enc 1'
+                else:
+                    name = 'All Radial Distances'
+            else:
+                name = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+' Rs'
+        
+        isfile = os.path.isfile(csv_path+csv_filename)
+
+        if isfile:
+            
+            df = pd.read_csv(csv_path+csv_filename)
+            bf = df.to_numpy()
+
+            af = np.delete(bf,bf[:,1]<wavelen,0)
+            
+            #print(af.shape)
+            
+            if by_Rs and i !=0:
+                af = np.delete(af,af[:,2]>Rs_grps[i-1][0],0)
+                af = np.delete(af,af[:,2]<Rs_grps[i-1][1],0)
+            
+            if no_enc_7 and i != enc_num: #this portion of code kills events in encounter 7
+                dates = list(af[:,0])
+                for j in range(len(dates)):
+                    dates[j] = dates[j][0:4]
+                npdates = np.array(dates)
+                af = np.delete(af,npdates=='2021',0)
+            
+            if no_enc_1 and i != 1: #this portion of code kills events in encounter 1
+                dates = list(af[:,0])
+                for j in range(len(dates)):
+                    dates[j] = dates[j][0:4]
+                npdates = np.array(dates)
+                af = np.delete(af,npdates=='2018',0)
+                
+            
+            wave_start = np.array(pys.time_float(af[:,0]))
+            wave_end = np.array(wave_start+af[:,1])
+            
+            window_start = np.array(wave_start - win_len*af[:,1])#*(1/3)) #complete epoch analysis for window larger than wave itself
+            window_end = np.array(wave_end + win_len*af[:,1])#*(1/3))     #want to see if theres a difference between times during and before/after events
+            
+            dates = list(af[:,0])
+            for j in range(len(dates)):
+                dates[j] = dates[j][0:10]
+
+            uniq_dates = np.unique(dates)
+            date_flt = pys.time_float(uniq_dates)
+            uniq_next = pys.time_string(np.array(date_flt)+86400.)
+            
+            duration = np.array(af[:,1])
+            
+            
+            
+            anis_time = []
+            anis_data = []
+            anis_len_arr = []
+            
+            
+            r_data = []
+            
+            filepath = '/Users/besh2109/Desktop/Tperp_Tpar/'
+            
+            filenames = []
+            files=[]
+            for ii in range(2,7):
+                name = 'E'+str(ii)+'_TA.txt'
+                filenames.append(name)
+                files.append(filepath+name)
+
+            line_list = []
+            for file_names in files:
+                with open(file_names) as file:
+                    lines = [line.rstrip().lstrip() for line in file]
+                    for jj in lines:
+                        line_list.append(jj)
+            
+            col_time_arr = []
+            col_data_arr = []
+            col_arr = []
+            for line in line_list:
+                columns = line.split('            ')
+                if len(columns)==2:
+                    col_arr.append(np.array(columns,dtype=str))
+
+            col_arr = np.double(col_arr)
+
+            
+            anis_time_arr = col_arr[:,0]
+            anis_data_arr = col_arr[:,1]
+            
+            for j in range(len(uniq_dates)):
+                
+                date_strt_flt = pys.time_float(uniq_dates[j])
+                date_end_flt = pys.time_float(uniq_next[j])
+                
+                where = np.where(np.logical_and(wave_start>date_strt_flt,wave_start<date_end_flt))
+                
+                win_start_tmp = np.array(window_start[where])
+                win_end_tmp = np.array(window_end[where])
+                wv_start = np.array(wave_start[where])
+                wv_end = np.array(wave_end[where])
+                wv_dur = np.array(duration[where])
+
+                for k in range(len(win_start_tmp)):
+                    
+                    anis_where = np.where((anis_time_arr > win_start_tmp[k]) & (anis_time_arr < win_end_tmp[k]))
+                    anis_where = anis_where[0]
+                    
+                    anis_ti = np.array(anis_time_arr[anis_where])
+                    anis = np.array(anis_data_arr[anis_where])
+                    
+                    anis_time.append(anis_ti)
+                    anis_data.append(anis)
+                    anis_len_arr.append(len(anis_ti))
+
+            time_tmp = []
+            anis_data_tmp = []
+            anis_len_tmp = []
+            
+            for m in range(len(anis_len_arr)):
+                if anis_len_arr[m] >= resolution:
+                    time_tmp.append(anis_time[m])
+                    anis_data_tmp.append(anis_data[m])
+                    anis_len_tmp.append(anis_len_arr[m])
+            
+            anis_time = list(time_tmp)
+            anis_data = list(anis_data_tmp)
+            anis_len_arr = np.array(anis_len_tmp)
+
+            min_anis_len = min(anis_len_arr)
+            n_anis_bins = int(min_anis_len)
+            print("Number of Bins: ",n_anis_bins)
+            print("Number of Waves: ",len(anis_time))
+            
+            for l in range(len(anis_time)):
+                anis_bin_size = anis_len_arr[l]/n_anis_bins
+                anis_ind_arr = np.arange(anis_len_arr[l])
+                norm_anis_time = np.zeros((n_anis_bins,))
+                norm_anis_val = np.zeros((n_anis_bins,))
+    
+                for m in range(n_anis_bins):
+                    
+                    win_str = m*anis_bin_size
+                    win_end = (m+1)*anis_bin_size
+                    wind_where = np.where((anis_ind_arr>=win_str)&(anis_ind_arr<win_end))
+                    wind_where = wind_where[0]
+                    anis_time_val_tmp = np.median(anis_time[l][wind_where])
+                    anis_val_tmp = np.median(anis_data[l][wind_where])
+                    
+                    norm_anis_time[m] = anis_time_val_tmp
+                    norm_anis_val[m] = anis_val_tmp
+                
+                
+                anis_time[l] = np.array(norm_anis_time)                
+                anis_data[l] = np.array(norm_anis_val)
+
+
+
+
+    
+    
+    
+    
+            if plot == 'epoch' or plot == 'all':
+
+                savepath = '/Users/besh2109/Desktop/PSP_epoch/ion_epoch_2/'
+
+                if not by_Rs:
+                    if i==0:
+                        savename = 'All_Events_ion_epoch.png'
+                        if no_enc_7:
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+                        nametmp = 'All Encounters'
+                    else:
+                        savename = 'Enc_'+str(i)+'_ion_epoch.png'
+                        nametmp = 'Encounter '+str(i)
+                        if no_enc_1:
+                            savename = 'Enc_'+str(i+1)+'_ion_epoch.png'
+                            nametmp = 'Encounter '+str(i+1)
+                else:
+                    if i==0:
+                        savename = 'All_Events_ion_epoch.png'
+                        if no_enc_7:
+                            savename = savename[:10]+'_no_7'+savename[10:]
+                        if no_enc_1:
+                            savename = savename[:10]+'_no_1'+savename[10:]
+                        nametmp = 'All Rs'
+                    else:
+                        savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_ion_epoch.png'
+                        nametmp = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+' Rs'
+
+                plt.rcParams['font.size']='20'
+                fis1 = plt.figure(figsize=(15,15))
+                #fis1.suptitle('Magnetic Field Unit Vector '+name, fontsize=16,y=0.92)
+                #$\frac{B_T}{|B|}$
+                ylabs = [r'$\frac{T\perp}{T_{avg}}$',r'$\frac{T_{||}}{T_{avg}}$','Temperature Anisotropy']
+                datas = [anis_data]
+                
+                datamax = anis_data
+                    
+                ind_hist = []
+                data_hist = []
+                ind_line = np.linspace(-win_len,win_len+1,len(datamax[0]))
+                median_line = np.median(np.array(datamax),0)
+                quart_line1 = np.quantile(np.array(datamax),0.25,axis=0)
+                quart_line2 = np.quantile(np.array(datamax),0.75,axis=0)
+                for o in datamax:
+                    ind = list(range(len(o)))
+                    data = list(o)
+                    ind_hist = ind_hist + ind
+                    data_hist = data_hist + data
+                    #axs1.plot(o)
+                ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                max_hist_arr = np.array(data_hist)
+                histo,xedge,yedge = np.histogram2d(ind_hist_arr,max_hist_arr,bins=[n_anis_bins,40])
+                histomax = np.transpose(histo)
+                histomax[histomax==0]=np.nan
+                
+                for ii in range(1):
+
+                    axs = fis1.add_subplot(1,1,ii+1)
+                
+                    data1 = datas[ii]
+                    
+                    ind_hist = []
+                    data_hist = []
+                    ind_line = np.linspace(-win_len,win_len+1,len(data1[0]))
+                    median_line = np.median(np.array(data1),0)
+                    quart_line1 = np.quantile(np.array(data1),0.25,axis=0)
+                    quart_line2 = np.quantile(np.array(data1),0.75,axis=0)
+                    for o in data1:
+                        ind = list(range(len(o)))
+                        data = list(o)
+                        ind_hist = ind_hist + ind
+                        data_hist = data_hist + data
+                        #axs1.plot(o)
+                    ind_hist_arr = (2*win_len+1)*np.array(ind_hist)/np.max(ind_hist) - win_len
+                    data_hist_arr = np.array(data_hist)
+                    
+                                
+                    histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_anis_bins,40])
+                    histo = np.transpose(histo)
+                    histo[histo==0]=np.nan
+                    
+                    # histo = np.log(histo)
+        
+                    r_color = axs.pcolormesh(xedge,yedge,histo, cmap='magma',vmax=np.nanmax(histo))  #,np.log10(histo)
+                    
+                    axs.plot(ind_line,median_line, color='darkturquoise',linewidth=3,label='Median')
+                    axs.plot(ind_line,quart_line1, color='seagreen',linewidth=3,label='1st quantile', linestyle='dashed')
+                    axs.plot(ind_line,quart_line2, color='seagreen',linewidth=3,label='3rd quantile', linestyle='dashed')
+                    
+                    axs.tick_params(axis='both', which='major')
+                    # axs.tick_params(axis='both', which='major', labelsize=16)
+                    if ii==0:
+                        axs.legend(loc=(1.1,0.6))
+                        #leg = axs.legend(bbox_to_anchor=(1.01,1), loc'upper left', borderaxespad=0)
+                    # if ii!=2:
+                    #     axs.get_xaxis().set_ticks([])
+                    #     axs.set_ylabel(ylabs[ii],rotation=0,fontsize=32)
+                    #     axs.yaxis.set_label_coords(-0.1,0.5)
+                    else:
+                        # axs.set_xlabel('Normalized Time',fontsize=18)
+                        axs.set_xlabel('Normalized Time')
+                        # axs.set_ylim([0.5,3])
+                        axs.set_ylabel(ylabs[ii])
+                        axs.yaxis.set_label_coords(-0.085,0.5)
+                    # axs.set_ylabel(ylabs[ii],fontsize=18)
+    
+                    box = axs.get_position()
+                    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+                    cbar = fis1.colorbar(r_color,cax=axColor)
+                    cbar.set_label(label='Counts')
+                    #cbar.set_label(label='Counts', size=16)
+                    #cbar.ax.tick_params(labelsize=14) 
+                
+                
+                plt.subplots_adjust(wspace=0, hspace=0.05)
+                # plt.show()
+                
+                # breakpoint()
+
+                plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
+                plt.clf()
+                plt.cla()
+                plt.close('all')
+                plt.close(fis1)
+            
+            # if plot == 'dist' or plot == 'all':
+                
+            #     #fis1 = plt.figure(figsize=(15,10))
+            #     #axs1 = fis1.add_subplot(131)
+
+            #     savepath = '/Users/besh2109/Desktop/PSP_epoch/ion_dist/'
+                
+            #     if not by_Rs:
+            #         if i==0:
+            #             savename = 'All_Events_ion_dist.png'
+            #             if no_enc_7:
+            #                 savename = savename[:10]+'_no_7'+savename[10:]
+            #             if no_enc_1:
+            #                 savename = savename[:10]+'_no_1'+savename[10:]
+    
+            #         else:
+            #             savename = 'Enc_'+str(i)+'_ion_dist.png'
+            #             if no_enc_1:
+            #                 savename = 'Enc_'+str(i+1)+'_ion_dist.png'
+            #     else:
+            #         if i==0:
+            #             savename = 'All_Events_ion_dist.png'
+            #             if no_enc_7:
+            #                 savename = savename[:10]+'_no_enc_7'+savename[10:]
+            #             if no_enc_1:
+            #                 savename = savename[:10]+'_no_enc_1'+savename[10:]       
+            #         else:
+            #             if no_enc_1:
+            #                 savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_no_1_ion_dist.png'
+            #             else:
+            #                 savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_ion_dist.png'
+
+            #     #fig1.suptitle('Ion Temperature Distributions '+name, fontsize=16,y=0.92)
+                
+            #     ind_hist = []
+            #     data_hist = []
+            #     for o in T_anis_I:
+            #         ind = list(range(len(o)))
+            #         data = list(o) #- np.median(o))
+            #         ind_hist = ind_hist + ind
+            #         data_hist = data_hist + data
+            #     ind_hist_arr = np.array(ind_hist)
+            #     data_hist_arr = np.array(data_hist)
+                
+            #     ind_hist_arr = np.delete(ind_hist_arr,np.isnan(data_hist_arr))
+            #     data_hist_arr = np.delete(data_hist_arr,np.isnan(data_hist_arr))
+                
+            #     histo,xedge,yedge = np.histogram2d(ind_hist_arr,data_hist_arr,bins=[n_temp_bins,125])
+            #     histo = np.transpose(histo)
+
+            #     k=0
+            #     dist1an = np.zeros(histo[:,0].shape)
+            #     while k < round(n_temp_bins/3): #distribution 1
+            #         dist1an = dist1an + histo[:,k]#/np.sum(histo[:,k])
+            #         k+=1
+
+            #     k=round(n_temp_bins/3)
+            #     dist2an = np.zeros(histo[:,0].shape)
+            #     while k >= round(n_temp_bins/3) and k < round(2*n_temp_bins/3): #distribution 2
+            #         dist2an = dist2an + histo[:,k]#/np.sum(histo[:,k])
+            #         k+=1
+
+            #     k=round(2*n_temp_bins/3)
+            #     dist3an = np.zeros(histo[:,0].shape)
+            #     while k >= round(2*n_temp_bins/3) and k<n_temp_bins: #distribution 3
+            #         dist3an = dist3an + histo[:,k]#/np.sum(histo[:,k])
+            #         k+=1
+                
+            #     #ax3.set_aspect(1)
+            #     #ax3.set_adjustable('box')
+            #     norm_val = np.max(dist2an)
+                
+            #     norm1 = np.sum(dist1an)
+            #     norm2 = np.sum(dist2an)
+            #     norm3 = np.sum(dist3an)
+                
+            #     norm_val = np.max(dist2an/norm2)
+                
+                
+            #     xcenters = (xedge[:-1] + xedge[1:]) / 2
+            #     ycenters = (yedge[:-1] + yedge[1:]) / 2
+                
+            #     befmed = np.median(ycenters*dist1an)
+            #     durmed = np.median(ycenters*dist2an)
+            #     aftmed = np.median(ycenters*dist3an)
+                
+                
+            #     xvals = ycenters
+            #     yvalsbefaft = ((dist1an/norm1+dist3an/norm3)/2)/norm_val
+            #     yvalsdur = (dist2an/norm2)/norm_val
+            #     model = SkewedGaussianModel()
+            #     params = model.make_params(amplitude=np.max((dist1an/norm1)), center=1.05, sigma=1, gamma=0)
+            #     resultbefaft = model.fit(yvalsbefaft, params, x=xvals)
+            #     print(resultbefaft.fit_report())
+            #     resultdur = model.fit(yvalsdur, params, x=xvals)
+            #     print(resultdur.fit_report())
+                
+                
+            #     plt.rcParams['font.size']='20'
+            #     fig1 = plt.figure(figsize=(22.5,10))
+                
+            #     #breakpoint()
+            #     ax3 = fig1.add_subplot(121)
+                
+            #     ax3.plot(ycenters,(dist1an/norm1)/norm_val,color='red',label='before region')
+            #     ax3.plot(ycenters,(dist2an/norm2)/norm_val,color='green',label='during region')
+            #     ax3.plot(ycenters,(dist3an/norm3)/norm_val,color='blue',label='after region')
+            #     ax3.legend()
+            #     #ax3.set_ylim([0,34])
+            #     ax3.set_xlim([0,3])
+            #     ax3.set_title('Ion Temperature Anisotropy')
+            #     ax3.set_ylabel('Normalized Counts Distribution')
+            #     ax3.set_xlabel(r'$\frac{T\perp}{T_{||}}$', fontsize=30)#r'$\frac{T_{||}}{T_{avg}}$' r'$\frac{T\perp}{T_{||}}$'
+            #     ax3.set_adjustable('box')
+            #     # ax3.set_aspect('equal')
+
+                
+            #     ax4 = fig1.add_subplot(122)
+            #     #breakpoint()
+            #     per_shift = np.round(((resultdur.best_values['center'] - resultbefaft.best_values['center'])/resultbefaft.best_values['center'])*100,1)
+            #     per_shift_text = 'Shift percent: '+str(per_shift)+'%'
+            #     chi_sqr_text = 'Chi Square: '+str(resultdur.chisqr)[0:6]
+                
+            #     ax4.plot(ycenters,resultbefaft.best_fit,color='purple',label='before-after average')
+            #     ax4.text(0.56,0.75,per_shift_text, transform=ax4.transAxes)
+            #     ax4.text(0.56,0.70,chi_sqr_text, transform=ax4.transAxes)
+            #     ax4.plot(ycenters,resultdur.best_fit,color='green',label='during region')
+            #     #ax4.plot(ycenters,dist3an/norm3,color='blue',label='after region')
+            #     ax4.legend(loc='upper right')
+            #     #ax3.set_ylim([0,34])0.5, 0.5, 'matplotlib', horizontalalignment='center',verticalalignment='center', transform=ax.transAxes
+            #     ax4.set_xlim([0,3])
+            #     ax4.set_title('Ion Temperature Anisotropy Skewed Gauss Fit')
+            #     ax4.set_ylabel('Normalized Counts Distribution')
+            #     ax4.set_xlabel(r'$\frac{T\perp}{T_{||}}$', fontsize=30)
+            #     ax4.set_adjustable('box')
+                
+            #     plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
+            #     plt.clf()
+            #     plt.cla()
+            #     plt.close('all')
+            #     plt.close(fig1)
+                
+            # if plot == 'beta' or plot == 'all':
+                
+            #     #fis1 = plt.figure(figsize=(15,10))
+            #     #axs1 = fis1.add_subplot(131)
+
+            #     savepath = '/Users/besh2109/Desktop/PSP_epoch/ion_beta/'
+                
+            #     if not by_Rs:
+            #         if i==0:
+            #             if no_enc_7:
+            #                 savename = 'All_Events_no_7_ion_beta.png'
+            #             elif no_enc_1:
+            #                 savename = 'All_Events_no_1_ion_beta.png'
+            #             else:
+            #                 savename = 'All_Events_ion_beta.png'      
+            #         else:
+            #             savename = 'Enc_'+str(i)+'_ion_beta.png'
+            #     else:
+            #         if i==0:
+            #             if no_enc_7:
+            #                 savename = 'All_Events_no_7_ion_beta.png'
+            #             elif no_enc_1:
+            #                 savename = 'All_Events_no_1_ion_beta.png'
+            #             else:
+            #                 savename = 'All_Events_ion_beta.png'      
+            #         else:
+            #             if no_enc_1:
+            #                 savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_no_1_ion_beta.png'
+            #             else:
+            #                 savename = str(Rs_grps[i-1][0])+'-'+str(Rs_grps[i-1][1])+'_Rs_ion_beta.png'
+
+            #     fig1 = plt.figure(figsize=(15,15))
+            #     fig1.suptitle('Ion Anisotropy vs Beta Para Distributions '+name, fontsize=16,y=0.92)
+            #     ax1 = fig1.add_subplot(221)
+            #     ax2 = fig1.add_subplot(222)
+            #     ax3 = fig1.add_subplot(223)
+            #     ax4 = fig1.add_subplot(224)
+                
+            #     histo,xedge,yedge = np.histogram2d(Beta_par_bef_med,T_anis_bef_med, range=[[0, 1], [0, 5]],bins=[25,25]) #bins=[25,25],
+            #     ax1.scatter(Beta_par_bef_med,T_anis_bef_med,s=1,color='red',label='before region')
+            #     ax1.pcolormesh(xedge,yedge,np.transpose(histo)) #,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
+                
+            #     ax1.set_title('Ion Temperature Anisotropy vs Beta Parallel Before Region')
+            #     ax1.set_ylabel('Tperp/Tpar')
+            #     ax1.set_xlabel('Beta Parallel')
+            #     ax1.set_ylim([0,5])
+            #     ax1.set_xlim([0,1])
+            #     ax1.set_adjustable('box')
+            #     ax1.legend()
+                
+            #     histo,xedge,yedge = np.histogram2d(Beta_par_dur_med,T_anis_dur_med, range=[[0, 1], [0, 5]],bins=[25,25]) # bins=[25,25],
+            #     ax2.scatter(Beta_par_dur_med,T_anis_dur_med,s=1,color='green',label='during region')
+            #     ax2.pcolormesh(xedge,yedge,np.transpose(histo)) #,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
+                
+            #     #ax2.set_ylim([0,26])
+            #     ax2.set_title('Ion Temperature Anisotropy vs Beta Parallel During Region')
+            #     ax2.set_ylabel('Tperp/Tpar')
+            #     ax2.set_xlabel('Beta Parallel')
+            #     ax2.set_ylim([0,5])
+            #     ax2.set_xlim([0,1])
+            #     ax2.set_adjustable('box')
+            #     ax2.legend()
+                
+            #     histo,xedge,yedge = np.histogram2d(Beta_par_aft_med,T_anis_aft_med, range=[[0, 1], [0, 5]],bins=[25,25]) #bins=[25,25],
+            #     ax3.scatter(Beta_par_aft_med,T_anis_aft_med,s=1,color='blue',label='after region')
+            #     ax3.pcolormesh(xedge,yedge,np.transpose(histo)) #,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
+                
+            #     ax3.set_title('Ion Temperature Anisotropy vs Beta Parallel After Region')
+            #     ax3.set_ylabel('Tperp/Tpar')
+            #     ax3.set_xlabel('Beta Parallel')
+            #     ax3.set_ylim([0,5])
+            #     ax3.set_xlim([0,1])
+            #     ax3.set_adjustable('box')
+            #     ax3.legend()
+                
+            #     beta_list = Beta_par_bef_med+Beta_par_dur_med+Beta_par_aft_med
+            #     anis_list = T_anis_bef_med+T_anis_dur_med+T_anis_aft_med
+            #     histo,xedge,yedge = np.histogram2d(beta_list,anis_list, range=[[0, 1], [0, 5]],bins=[25,25]) #bins=[25,25],
+            #     ax4.scatter(Beta_par_bef_med,T_anis_bef_med,s=1,color='red',label='before region')
+            #     ax4.scatter(Beta_par_dur_med,T_anis_dur_med,s=1,color='green',label='during region')
+            #     ax4.scatter(Beta_par_aft_med,T_anis_aft_med,s=1,color='blue',label='after region')
+            #     ax4.pcolormesh(xedge,yedge,np.transpose(histo))#,extent=[xedge.min(),xedge.max(),yedge.min(),yedge.max()]
+                
+            #     ax4.set_title('Ion Temperature Anisotropy vs Beta Parallel Whole Window')
+            #     ax4.set_ylabel('Tperp/Tpar')
+            #     ax4.set_xlabel('Beta Parallel')
+            #     ax4.set_ylim([0,5])
+            #     ax4.set_xlim([0,1])
+            #     ax4.set_adjustable('box')
+            #     ax4.legend()
+            #     #ax4.set_xlim([0,2])
+            #     #ax4.set_ylim([0,50])
+                
+               
+                
+            #     #ax2 = fig1.add_subplot(2,2,(1,2))
+                
+            #     plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
+            #     plt.clf()
+            #     plt.cla()
+            #     plt.close('all')
+            #     plt.close(fig1)
+        
+        
+        i+=1
+    
+def ion_check(no_enc_7=False, no_enc_1=False, win_len=1,resolution=4,wavelen=90):
+
+    csv_filename = 'harmwave_master_arch.csv'
+    # csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+    csv_path='/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+    if no_enc_7:
+        name = 'All Encounters sans 7'
+    elif no_enc_1:
+        name = 'All Encounters sans 1'
+    else:
+        name = 'All Encounters'
+        
+    
+    isfile = os.path.isfile(csv_path+csv_filename)
+
+    if isfile:
+        
+        df = pd.read_csv(csv_path+csv_filename)
+        bf = df.to_numpy()
+
+        af = np.delete(bf,bf[:,1]<wavelen,0)
+        
+        #print(af.shape)
+        
+        
+        if no_enc_7: #this portion of code kills events in encounter 7
+            dates = list(af[:,0])
+            for j in range(len(dates)):
+                dates[j] = dates[j][0:4]
+            npdates = np.array(dates)
+            af = np.delete(af,npdates=='2021',0)
+        
+        if no_enc_1: #this portion of code kills events in encounter 1
+            dates = list(af[:,0])
+            for j in range(len(dates)):
+                dates[j] = dates[j][0:4]
+            npdates = np.array(dates)
+            af = np.delete(af,npdates=='2018',0)
+            
+        
+        wave_start = np.array(pys.time_float(af[:,0]))
+        wave_end = np.array(wave_start+af[:,1])
+        
+        dates = list(af[:,0])
+        for j in range(len(dates)):
+            dates[j] = dates[j][0:10]
+
+        uniq_dates = np.unique(dates)
+        date_flt = pys.time_float(uniq_dates)
+        uniq_next = pys.time_string(np.array(date_flt)+86400.)
+        
+        duration = np.array(af[:,1])
+        
+        dens_time = []
+        density_data = []
+        dens_len_arr = []
+        
+        qtn_time = []
+        QTN_data = []
+        qtn_len_arr = []
+        
+        for j in range(len(uniq_dates)): #gather data for each day range(2):#
+
+            """ PSP Positional data """
+            # pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]], datatype='ephem_eclipj2000', level='l1') #going to be used to plot parker position
+            # pos_data = pyt.get_data('position')
+
+            # pos_time_arr = pos_data[0]
+            # pos_data_arr = pos_data[1]
+            
+            """ SPI (SPC) ion data """
+            
+            e1c = pys.time_float(uniq_dates[j])
+            # if e1c > enc_flt[0][0] and e1c < enc_flt[2][1]: #if encounter 1-3, use SPC
+            if e1c > enc_flt[0][0] and e1c < enc_flt[0][1]: #if encounter 1, use SPC
+                enc1check = True
+            else:
+                enc1check = False
+                
+            if enc1check:
+                pys.psp.spc(trange=[uniq_dates[j],uniq_next[j]], level='L3')
+                dens_data = pyt.get_data('np_fit')
+                # print(vel_data)
+                dens_time_arr = dens_data[0]
+                dens_data_arr = dens_data[1]
+                # print('spc')
+            
+            else:
+                pys.psp.spi(trange=[uniq_dates[j],uniq_next[j]], datatype='spi_sf00', level='L3')
+                
+                
+                dens_data = pyt.get_data('DENS')
+                
+                dens_time_arr = dens_data[0]
+                dens_data_arr = dens_data[1]
+            
+            """ QTN electron data """
+            
+            pys.psp.fields(trange=[uniq_dates[j],uniq_next[j]],datatype='sqtn_rfs_V1V2',level='l3')
+            
+            qtn_data = pyt.get_data('electron_density')
+            
+            qtn_time_arr = qtn_data[0]
+            qtn_data_arr = qtn_data[1]
+            
+            """ date management """
+                
+            date_strt_flt = pys.time_float(uniq_dates[j])
+            date_end_flt = pys.time_float(uniq_next[j])
+            
+            where = np.where(np.logical_and(wave_start>date_strt_flt,wave_start<date_end_flt))
+            
+            wv_start = np.array(wave_start[where])
+            wv_end = np.array(wave_end[where])
+            wv_dur = np.array(duration[where])
+            
+            for k in range(len(wv_start)):
+                
+                """ spi density data """
+                dens_where = np.where((dens_time_arr > wv_start[k]) & (dens_time_arr < wv_end[k]))
+                dens_where = dens_where[0]
+                
+                dens_ti = np.array(dens_time_arr[dens_where])
+                dens = np.array(dens_data_arr[dens_where])#*1e6 #1/m^3
+                
+                dens_time.append(dens_ti)
+                density_data.append(dens)
+                dens_len_arr.append(len(dens_ti))
+                
+                """ qtn density data """
+                qtn_where = np.where((qtn_time_arr > wv_start[k]) & (qtn_time_arr < wv_end[k]))
+                qtn_where = qtn_where[0]
+                
+                qtn_ti = np.array(qtn_time_arr[qtn_where])
+                qtn = np.array(qtn_data_arr[qtn_where]) #1/cm^3
+                
+                qtn_time.append(qtn_ti)
+                QTN_data.append(qtn)
+                qtn_len_arr.append(len(qtn_ti))
+                
+        time_tmp = []
+        dens_data_tmp = []
+        dens_len_tmp = []
+        qtn_data_tmp = []
+        qtn_len_tmp = []
+                
+        for m in range(len(dens_len_arr)):
+            if dens_len_arr[m] >= resolution:
+                time_tmp.append(qtn_time)
+                dens_data_tmp.append(density_data[m])
+                dens_len_tmp.append(dens_len_arr[m])
+                qtn_data_tmp.append(QTN_data[m])
+                qtn_len_tmp.append(qtn_len_arr[m])
+        
+        qtn_time = list(time_tmp)
+        density_data = list(dens_data_tmp)
+        QTN_data = list(qtn_data_tmp)
+        qtn_len_arr = np.array(qtn_len_tmp)
+            
+        min_qtn_len = min(qtn_len_arr)
+        n_qtn_bins = int(min_qtn_len)
+        
+        dens_len_arr = np.array(dens_len_tmp)
+        
+        min_dens_len = min(dens_len_arr)
+        n_dens_bins = int(min_dens_len)
+        
+        # print(len(QTN_data),len(density_data))
+        # iii=0
+        for l in range(len(qtn_time)):
+            
+            if dens_len_arr[l] != qtn_len_arr[l]:
+                min_len = np.min([dens_len_arr[l],qtn_len_arr[l]])
+                if dens_len_arr[l] == min_len:
+                    max_len = qtn_len_arr[l]
+                    min_data = density_data[l]
+                    max_data = QTN_data[l]
+                else:
+                    max_len = dens_len_arr[l]
+                    min_data = QTN_data[l]
+                    max_data = density_data[l]
+                    
+                    
+                min_bins = min_len
+                min_bin_size = max_len/min_bins
+                
+                time_xp = np.arange(min_len)
+                time_x = np.arange(max_len)
+                
+                # min_data_interp = np.interp(mag_time_x,mag_time_xp,mag_data_arr[:,0])
+                # print(min_data)
+                # print('yeet')
+                min_data_interp = np.interp(time_x,time_xp,min_data)
+                # print(min_data_interp)
+                # stop
+                
+                if dens_len_arr[l] == min_len:
+                    density_data[l] = min_data_interp
+                else:
+                    QTN_data[l] = min_data_interp
+            
+            # print(density_data[l])
+            # time.sleep(0.75)
+            # print(QTN_data[l],density_data[l])
+            print(np.nanmedian(np.abs(QTN_data[l]/(1.1)-density_data[l]))/np.nanmedian(QTN_data[l]/(1.1)))

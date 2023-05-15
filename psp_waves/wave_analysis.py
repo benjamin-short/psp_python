@@ -55,7 +55,7 @@ def wave_2d_hist(arg=''):
             else:     
                 rs_to_peri = np.array(bf[:,10])
             
-            histo,xedge,yedge = np.histogram2d(rs_to_peri,f_fce,bins=[30,100],range=[[rs_to_peri.min(),rs_to_peri.max()],[0,2]])
+            histo,xedge,yedge = np.histogram2d(rs_to_peri,f_fce,bins=[30,200],range=[[rs_to_peri.min(),rs_to_peri.max()],[0,2]])
             histo = np.transpose(histo)
             histo[histo==0]=np.nan
             
@@ -70,7 +70,8 @@ def wave_2d_hist(arg=''):
                 axs1.set_xlabel('Distance from Perihelion in Rs',fontsize=16)
             
             axs1.set_ylabel('f/fce', fontsize=16)
-    
+            axs1.set_ylim(0.4,1.1)
+            axs1.set_xlim(-15,15)
             isdir = os.path.isdir(savepath)
                         
             if isdir == False:
@@ -84,8 +85,7 @@ def wave_2d_hist(arg=''):
                 
         i+=1
         
-
-def py_archipelago():
+def py_archipelago(gap_len=120):
     Rs = 6.957e5 #solar radius in km
     i = 0 #start at 0 to operate on the master csv as well as the original csvs
     enc_num = len(per_flt)-1
@@ -94,13 +94,14 @@ def py_archipelago():
         if i == 0:
             csv_filename = 'harmwave_sorted_master.csv'
             csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
-            savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
-            savename = 'harmwave_master_arch.csv'
+            savename = 'harmwave_master_arch.csv' 
         else:
             csv_filename = 'enc_'+str(i)+'_harmwave_sorted.csv'
             csv_path = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
-            savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/Enc'+str(i)+'/'
             savename = 'enc_'+str(i)+'_harmwave_arch.csv'
+            
+        savepath = '/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+       
             
         df = pd.read_csv(csv_path+csv_filename)
         bf = df.to_numpy()
@@ -119,7 +120,7 @@ def py_archipelago():
             
             wave_dif = next_start - wave_end
             
-            if wave_dif < 120:
+            if wave_dif < gap_len:
                 yes_check.append('yes') #could just use boolean objects but thats lame
 
             else:
@@ -223,3 +224,58 @@ def py_archipelago():
         with open(savepath+savename,"a") as file:
                                 
             np.savetxt(file,csv_arr,delimiter=',',fmt='%s')
+
+def wave_hist():
+    
+    csv_filename = 'harmwave_sorted_master.csv'
+    csv_path='/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/'
+    savepath = '/Users/besh2109/Desktop/psp_islands/wave_data/sorted_csvs/histograms/'
+    savename = 'master_histogram.png'
+    
+    df = pd.read_csv(csv_path+csv_filename)
+    bf = df.to_numpy()
+    
+    qr_dura = bf[:,1]
+    
+    qr_dura = np.delete(qr_dura,qr_dura<90)
+    
+    hist = np.histogram(qr_dura,bins=1000)
+    
+    fig = plt.figure(figsize=(10,6))
+    axs1 = fig.add_subplot(111)
+    
+    # binsize = np.diff(hist[1])
+    # binsize = binsize[0]
+    
+    # lst = []
+    # for i in hist[1]:
+    #     lst.append(i-binsize/2)
+    #     print(i)
+    
+    # bin_arr = np.array(lst[1:len(lst)])
+    
+    # breakpoint()
+    bin_arr = hist[1]
+
+    axs1.bar(bin_arr[0:len(bin_arr)-1],hist[0],align='edge',width=3)
+    axs1.vlines(90,ymin=0,ymax=40,color='red',label='90 second cutoff')
+    
+    axs1.set_ylabel('Occurrence', fontsize=16)
+    axs1.set_xlabel('Wave Duration (seconds)')
+    axs1.set_title('Wave Occurence vs Duration')
+    axs1.legend()
+    # axs1.set_ylim(0.4,1.1)
+    axs1.set_xlim(89,600)
+    isdir = os.path.isdir(savepath)
+                
+    if isdir == False:
+        os.makedirs(savepath)
+                
+    # plt.savefig(savepath+savename, bbox_inches = 'tight',pad_inches = 0.2)
+    plt.show()
+    plt.clf()
+    plt.cla()
+    plt.close('all')
+    plt.close(fig)
+    
+    # print('memes')

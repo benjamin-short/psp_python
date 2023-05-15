@@ -52,21 +52,30 @@ def load(trange=['2018-11-5', '2018-11-6'],
         from the secure site. - Ben Short
         """
         daytypelist = ['rfs_burst','rfs_hfr','rfs_lfr','tds_wf','dfb_ac_bpf','dfb_dc_bpf','dfb_ac_spec','dfb_dc_spec','dfb_ac_xspec','dfb_dc_xspec']
-        othertypelist = ['mag_RTN_4_Sa_per_Cyc','mag_RTN_1min','mag_SC_1min','mag_SC_4_Sa_per_Cyc','f2_100bps','aeb1_hk','aeb2_hk']
+        hourtypelist = ['mag_RTN_4_Sa_per_Cyc','mag_RTN_1min','mag_SC_1min','mag_SC_4_Sa_per_Cyc','f2_100bps','aeb1_hk','aeb2_hk']
+        othertypelist = ['sqtn_rfs_V1V2']
         
         if datatype in daytypelist:
             dateres = '_%Y%m%d' #these datatypes do not have hour resolution.
             asterisk = '_*'
+            v_form = '_v??'
             
-        elif (datatype in othertypelist) or (datatype[0:5] == 'ephem'):
+        elif (datatype in hourtypelist) or (datatype[0:5] == 'ephem'):
             dateres = '_%Y%m%d'
             asterisk = ''
+            v_form = '_v??'
+        
+        elif datatype in othertypelist:
+            dateres = '_%Y%m%d' #these datatypes do not have hour resolution.
+            asterisk = ''
+            v_form = '_v?.0'
         
         else:
             dateres = '_%Y%m%d%H'
             asterisk =''
+            v_form = '_v??'
 
-        pathformat = instrument + '/' + level + '/' + datatype + dateformat+nameform+'_fld_' + level + '_' + datatype + asterisk + dateres + '_v??.cdf'
+        pathformat = instrument + '/' + level + '/' + datatype + dateformat+nameform+'_fld_' + level + '_' + datatype + asterisk + dateres + v_form + '.cdf'
         file_resolution = 6*3600.
         
     

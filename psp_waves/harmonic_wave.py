@@ -21,9 +21,9 @@ import os
 from statistics import median
 from statistics import mean
 
-
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
+from scipy.fft import ifft,fft,fftfreq
 import pandas as pd
 
 from .py_islands import islands
@@ -37,6 +37,7 @@ from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
+Rs = 6.957e5 #solar radius in km
 
 def sizeof_fmt(num, suffix='B'):
     ''' by Fred Cirera,  https://stackoverflow.com/a/1094933/1870254, modified'''
@@ -48,7 +49,7 @@ def sizeof_fmt(num, suffix='B'):
 
 def harm_wave_id(fd='2018-10-03', mode='csv'): #can choose any date for fd, can choose 'csv', 'picture', or 'both' for mode
 
-    if mode == 'pictures': mode = 'picture'
+    #if mode == 'pictures': mode = 'picture' # i obviously knew nothing about Python when I wrote this line
     if mode not in ['csv','picture','all','none']: mode == 'all'
     
     first_day = fd
@@ -210,9 +211,6 @@ def harm_wave_id(fd='2018-10-03', mode='csv'): #can choose any date for fd, can 
                  #Ive ignored the mag data for now
                 mag_time_arr = mag_data[0]
                 mag_data_arr = mag_data[1]
-                
-                
-
                 
                 acspec_time_arr = np.array(acspec_data[0])
                 ac_tmp = np.array(acspec_data[1])
@@ -659,71 +657,43 @@ def harm_wave_id(fd='2018-10-03', mode='csv'): #can choose any date for fd, can 
                             g = lambda xx,pos : "${}$".format(f._formatSciNotation('%1.10e' % xx))
                             #fig = plt.figure()
                             
+
+                            plt.rcParams['font.size']='24'
                             fig = plt.figure(figsize=(25,20))
-                            axs1 = fig.add_subplot(411)
-                            axs2 = fig.add_subplot(412)
-                            axs3 = fig.add_subplot(413)
-                            axs4 = fig.add_subplot(414)
                             
-                            axs1.set(title=pys.time_string(ac_time_tmp[0],fmt='%Y-%m-%d/%H:%M:%S') + ' Encounter '+str(encounter))
+                            title = ['Strahl Width','Core Drift','Electron Temperature','Temperature Anisotropy']
+                            colorlabs = ['dB','Island Number','Island Number','Island Number']
+                            ylabs = ['Spectrogram (Hz)','Islands Routine','Time Filter','Frequency Filter']
+                            datas = [ac_data_tmp,isl_arr0,isl_arr1,isl_arr2]
                             
-                            acspec1 = axs1.pcolormesh(ac_time_tmp,ac_freq_lst,ac_data_tmp,cmap='nipy_spectral',shading='nearest')
+                            for ii in range(4):
                             
-                            axs1.set_yscale("log")
-                            #axs1.set_ylim(acspec_freq_lst[2],acspec_freq_lst[51])
-                            #axs1.set_yticks([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            #axs1.set_yticklabels([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            axs1.yaxis.set_major_formatter(ticker.FuncFormatter(g))
+                                axs = fig.add_subplot(4,1,ii+1)
+
+                                if ii==0:
+                                    axs.set(title=pys.time_string(ac_time_tmp[0],fmt='%Y-%m-%d/%H:%M:%S') + ' Encounter '+str(encounter))
+                                    acspec = axs.pcolormesh(ac_time_tmp,ac_freq_lst,datas[ii],cmap='nipy_spectral',shading='nearest')
+                                
+                                else:
+                                    vmax = np.nanmax(isl_arr0)
+                                    acspec = axs.pcolormesh(ac_time_tmp,ac_freq_lst,datas[ii],cmap='nipy_spectral',shading='nearest',vmin=0,vmax=vmax)
+                                
+                                axs.set_yscale("log")
+
+                                axs.yaxis.set_major_formatter(ticker.FuncFormatter(g))
+
+                                box = axs.get_position()
+                                axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+                                
+                                fig.colorbar(acspec,cax=axColor, label=colorlabs[ii])
+                                axs.set_ylabel(ylabs[ii])
+                                if ii!=3:
+                                    axs.get_xaxis().set_ticks([])
+                                else:
+                                    axs.set_xlabel('Seconds since 01-01-1970')
+                                    
+                            plt.subplots_adjust(wspace=0, hspace=0.05)
                             
-                                            
-                            box = axs1.get_position()
-                            axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                            
-                            fig.colorbar(acspec1,cax=axColor, label='dB')
-                            
-                            acspec2 = axs2.pcolormesh(ac_time_tmp,ac_freq_lst,isl_arr0,cmap='nipy_spectral',shading='nearest')
-                            
-                            axs2.set_yscale("log")
-                            #axs2.set_ylim(acspec_freq_lst[2],acspec_freq_lst[51])
-                            #axs2.set_yticks([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            #axs2.set_yticklabels([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            axs2.yaxis.set_major_formatter(ticker.FuncFormatter(g))
-                            
-                                            
-                            box = axs2.get_position()
-                            axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                            
-                            fig.colorbar(acspec2,cax=axColor, label='Island Number')
-                            #plt.show()
-                            
-                            acspec3 = axs3.pcolormesh(ac_time_tmp,ac_freq_lst,isl_arr1,cmap='nipy_spectral',shading='nearest') # mod_isl_arr isl_arr1
-                            
-                            axs3.set_yscale("log")
-                            #axs3.set_ylim(acspec_freq_lst[2],acspec_freq_lst[51])
-                            #axs3.set_yticks([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            #axs3.set_yticklabels([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            axs3.yaxis.set_major_formatter(ticker.FuncFormatter(g))
-                            
-                                            
-                            box = axs3.get_position()
-                            axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                            
-                            fig.colorbar(acspec3,cax=axColor, label='Island Number')
-                            
-                            acspec4 = axs4.pcolormesh(ac_time_tmp,ac_freq_lst,isl_arr2,cmap='nipy_spectral',shading='nearest')
-                            
-                            axs4.set_yscale("log")
-                            #axs4.set_ylim(acspec_freq_lst[2],acspec_freq_lst[51])
-                            #axs4.set_yticks([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            #axs4.set_yticklabels([5e2,10e2,2e3,5e3,10e3,2e4,5e4])
-                            axs4.yaxis.set_major_formatter(ticker.FuncFormatter(g))
-                            
-                                            
-                            box = axs4.get_position()
-                            axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
-                            
-                            fig.colorbar(acspec4,cax=axColor, label='Island Number')
-                            #plt.show()
                             
                             savepath = "/Users/besh2109/Desktop/psp_islands/"+pys.time_string(ti_doub,fmt='%Y/%m/%d/')
                             savename = "psp_"+pys.time_string(ti_doub,fmt='%Y%m%d%H%M')+"_isl.png"
@@ -833,3 +803,237 @@ def harm_wave_id(fd='2018-10-03', mode='csv'): #can choose any date for fd, can 
                 pass
         
         i_day+=86400.        
+        
+def quiescent_id(fd='2018-10-03', mode='csv'): #can choose any date for fd, can choose 'csv', 'picture', or 'both' for mode
+    
+    first_day = fd
+    current_day = date.today().strftime("%Y-%m-%d")
+    
+    i_day = pys.time_float(first_day)
+    
+    loop_day = pys.time_float(current_day) - 86400.
+    
+    csv_filename = 'harmwave_master_arch.csv'
+    csv_path = '/Users/besh2109/Desktop/PSP_epoch/wave_dates/'
+    
+    df = pd.read_csv(csv_path+csv_filename)
+    bf = df.to_numpy()
+    
+    wave_starts = np.array(pys.time_float(bf[:,0]))
+    
+    qual_check = []
+    times = []
+    
+    while i_day < loop_day: #pys.time_float(first_day) + 3*86400.:
+        
+        t0 = pys.time_string(i_day-21600)
+        tf = pys.time_string(i_day + 86400.+21600)
+        
+        wave_where = np.where((wave_starts>i_day) & (wave_starts<i_day+86400))
+        wave_where = wave_where[0]
+        
+        wave_location = wave_starts[wave_where]
+        wave_zeros = np.zeros(len(wave_where))
+        
+        """
+        for name, size in sorted(((name, sys.getsizeof(value)) for name, value in locals().items()),key= lambda x: -x[1])[:10]:
+                                 
+            print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+        """
+        
+        enci = 0
+        for enc in enc_flt:          
+            if (i_day>enc[0]) and (i_day<enc[1]): 
+                encounter = enci+1 #determine which encounter today is in
+                per_date = per_flt[enci]
+                per_dist = per_dist_lst[enci]
+            enci+=1
+
+        #mag_file_path = CONFIG['local_data_dir']+'/fields/l2/mag_RTN_4_Sa_per_Cyc/'+t0[0:4]+'/'+t0[5:7]+'/'
+        mag_file_path = CONFIG['local_data_dir']+'/data/sci/fields/l2/mag_RTN/'+t0[0:4]+'/'+t0[5:7]+'/'
+        ephem_file_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/'+t0[0:4]+'/'+t0[5:7]+'/'
+        
+        
+        ephem_file_name = pys.time_string(i_day,fmt='spp_fld_l1_ephem_eclipj2000_%Y%m%d_v01.cdf')
+        
+        isdir_mag = os.path.isdir(mag_file_path)
+        isdir_eph = os.path.isdir(ephem_file_path)
+        
+        if isdir_mag == False:
+            os.makedirs(mag_file_path)
+        if isdir_eph == False:
+            os.makedirs(ephem_file_path)
+        
+        """ 
+        The following could simply be done with psp.fields(arguments), but certain servers pay attention to
+        what IPs are hogging data. Particularly the public NASA servers. If I pull too much information for too long
+        (like looping through all the Parker Solar Probe data)
+        then the servers will seriously slow down how much I can pull after a while. 
+        
+        Here I'm pulling straight from the Berkeley Servers so that shouldnt
+        be an issue but its good practice to check whether you have the data already before unnecessarily making a
+        a request of the server.
+        """
+        
+
+        mag_res = 6*3600 #seconds: that is, 6 hours. The resolution of the magnetic field files.
+        
+        #mag_file_name = pys.time_string(i_day,fmt='psp_fld_l2_mag_RTN_4_Sa_per_Cyc_%Y%m%d_v01.cdf')
+        mag_file_name = []
+        mag_isfile = []
+        mag_infile = []
+        for j in range(-1,5):
+            
+            mag_file = pys.time_string(i_day+j*21600,fmt='psp_fld_l2_mag_RTN_%Y%m%d%H_v02.cdf')
+            mag_file_name.append(mag_file)
+            mag_isfile.append(os.path.isfile(mag_file_path+mag_file))
+            mag_infile.append(mag_file_path+mag_file)
+        
+        #print(mag_isfile)
+        
+        if False in mag_isfile:
+            #psp.fields(trange=[t0,tf], datatype='mag_RTN', level='l2')
+            #psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True)
+            psp.fields(trange=[t0,tf], datatype='mag_RTN', level='l2',last_version=True)
+        else:
+            #print(t0[0:10]+" mag file exists, importing data...")
+            #pyt.cdf_to_tplot(mag_infile)
+            pyt.cdf_to_tplot(mag_infile)
+             
+        #mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+        mag_data = pyt.get_data('psp_fld_l2_mag_RTN')   #retrieve mag data from tplot variable
+        
+        if mag_data != None: # if data exists
+        
+            mag_time_arr = mag_data[0]
+            mag_data_arr = mag_data[1]
+            
+            ephem_isfile = os.path.isfile(ephem_file_path+ephem_file_name)
+            
+            if ephem_isfile:
+                pyt.cdf_to_tplot(ephem_file_path+ephem_file_name)
+            else:
+                psp.fields(trange=[t0,tf], datatype='ephem_eclipj2000', level='l1') 
+            
+            pos_data = pyt.get_data('position') #retrieve PSP position data from tplot variable
+    
+            pos_time_arr = pos_data[0]
+            pos_data_arr = pos_data[1]
+            
+            
+            # print(pys.time_string(i_day))
+            # print(np.mean(np.sqrt(pos_data_arr[0]**2+pos_data_arr[1]**2+pos_data_arr[2]**2)/Rs),' Rs')
+
+            i=0
+            while i < 2880:
+                #print(i)
+                fftwhere = np.where((mag_time_arr>i_day+30*i-30) & (mag_time_arr<i_day+30*i+30))
+                fftwhere = fftwhere[0]
+                
+                time_pos_flt = i_day+30*i
+                
+                
+                
+                mag_time_tmp = mag_time_arr[fftwhere]
+                mag_r_tmp = mag_data_arr[fftwhere,0]
+                mag_t_tmp = mag_data_arr[fftwhere,1]
+                mag_n_tmp = mag_data_arr[fftwhere,2]
+                
+                #print(len(fftwhere))
+                
+                if len(fftwhere) < 360:
+                    qual_check.append(np.nan)
+                    # print('yeeyee')
+                else:
+                    j=0
+                    res = []
+                    while j<60:
+                        res.append(np.round(mag_time_tmp[j+1]-mag_time_tmp[j],3))
+                        j+=1
+                    res = np.array(res)
+                    av_res = round(np.mean(res),3)
+                    # print(av_res)
+                    # print(res)
+                    if False in res==av_res: #if the resolution deviates (significantly) across a window.
+                        qual_check.append(np.nan)
+                    else:
+                        
+                        Nr = len(mag_r_tmp)
+                        Nt = len(mag_t_tmp)
+                        Nn = len(mag_n_tmp)
+                        
+                        r_fft = fft(mag_r_tmp)[:Nr//2]/Nr
+                        t_fft = fft(mag_t_tmp)[:Nt//2]/Nt
+                        n_fft = fft(mag_n_tmp)[:Nn//2]/Nn
+                        
+                        r_fft = np.abs(r_fft)**2
+                        t_fft = np.abs(t_fft)**2
+                        n_fft = np.abs(n_fft)**2
+                        
+                        r_fft_freq = fftfreq(Nr,av_res)[:Nr//2]
+                        t_fft_freq = fftfreq(Nt,av_res)[:Nt//2]
+                        n_fft_freq = fftfreq(Nn,av_res)[:Nn//2]
+                        
+                        r_fft_where = np.where((r_fft_freq>=0.05) & (r_fft_freq<=1))
+                        r_fft_where=r_fft_where[0]
+                        
+                        r_fft_wind = r_fft[r_fft_where]
+                        
+                        t_fft_where = np.where((t_fft_freq>=0.05) & (t_fft_freq<=1))
+                        t_fft_where=t_fft_where[0]
+                        
+                        t_fft_wind = t_fft[t_fft_where]
+                        
+                        n_fft_where = np.where((n_fft_freq>=0.05) & (n_fft_freq<=1))
+                        n_fft_where=n_fft_where[0]
+                        
+                        n_fft_wind = n_fft[n_fft_where]
+                        
+                        freq_wind = r_fft_freq[r_fft_where]
+                        
+                        # plt.plot(r_fft_freq, (np.abs(r_fft+t_fft+n_fft))/r_fft_freq**-(5/3))
+                        # plt.xlim((0.05,1.2))
+                        # plt.ylim((0,3000))
+                        # plt.show()
+                        quality = np.mean((r_fft_wind+t_fft_wind+n_fft_wind)/freq_wind**-(5/3))
+                        quality = quality/r_fft_freq[1]
+                        
+                        qual_check.append(quality)
+                        
+                times.append(time_pos_flt)
+                i+=1
+            
+            
+            # print(r_fft_freq[0:4], 'Hz')
+            
+            # qual_check = np.array(qual_check)
+            # times = np.array(times)
+            
+            # #breakpoint()
+            
+            # fig = plt.figure(figsize=(15,10))
+            
+            # ax = fig.add_subplot(111)
+            
+            # ax.plot(times,np.log10(qual_check))
+            # ax.scatter(wave_location,wave_zeros,marker='|',color='green', s=10000)
+            # plt.show()
+            
+
+        i_day+=86400.
+    
+    savepath = '/Users/besh2109/Desktop/'
+    tplotfile = 'turbulence_quality_check.tplot'
+    npfile = 'turbulence_quality_check.npy'
+    
+    qual_check = np.array(qual_check)
+    times = np.array(times)
+    
+    save_arr = np.array([times,qual_check])
+    
+    np.save(savepath+npfile,save_arr)
+    
+    pyt.store_data('turbulence_quality_check',data={'x':times,'y':qual_check})
+    pyt.tplot_save('turbulence_quality_check',filename=savepath+tplotfile)
+    
+    

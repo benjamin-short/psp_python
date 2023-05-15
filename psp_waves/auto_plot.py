@@ -22,12 +22,35 @@ import cartopy.crs as ccrs
 import pyspedas.stereo as ste
 from matplotlib import gridspec
 
+from matplotlib.ticker import FormatStrFormatter
+import matplotlib.ticker as mticker
+
 from .config import CONFIG
 from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
-def auto_plot(fd="2018-10-03"):
+
+class MathTextSciFormatter(mticker.Formatter):
+    def __init__(self, fmt="%1.0e"):
+        self.fmt = fmt
+    def __call__(self, x, pos=None):
+        s = self.fmt % x
+        decimal_point = '.'
+        positive_sign = '+'
+        tup = s.split('e')
+        significand = tup[0].rstrip(decimal_point)
+        sign = tup[1][0].replace(positive_sign, '')
+        exponent = tup[1][1:].lstrip('0')
+        if exponent:
+            exponent = '10^{%s%s}' % (sign, exponent)
+        if significand and exponent:
+            s =  r'%s{\times}%s' % (significand, exponent)
+        else:
+            s =  r'%s%s' % (significand, exponent)
+        return "${}$".format(s)
+
+def auto_plot(fd="2018-10-03",fast=True):
     first_day = fd
     current_day = date.today().strftime("%Y-%m-%d")
     
@@ -42,10 +65,15 @@ def auto_plot(fd="2018-10-03"):
         
         mag_list = ['mag_RTN','mag_rtn']
         
+
+        
         if os.environ.get('PSP_FIELDS_ID'):
             mag_data_type = mag_list[0]
         else:
             mag_data_type = mag_list[1]
+            
+        if fast:
+            mag_data_type=mag_data_type+'_4_Sa_per_Cyc'
         
         mag_in = psp.fields(trange=[t0,tf], datatype=mag_data_type, level='l2',last_version=True)    
         acspec_in = psp.fields(trange=[t0,tf], datatype='dfb_ac_spec', level='l2')
@@ -56,7 +84,9 @@ def auto_plot(fd="2018-10-03"):
         
         
         """ Historical Position Data """
-        hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
+        
+        hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/'
+        #print(hpos_path)
         pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
         #print(pyt.tplot_names())
         hpos = pyt.get_data('position')
@@ -94,7 +124,11 @@ def auto_plot(fd="2018-10-03"):
     
         
         """ PSP wave data """
-        mag_data = pyt.get_data('psp_fld_l2_mag_RTN')
+        mag_data_get_type = 'psp_fld_l2_mag_RTN'
+        if fast:
+            mag_data_get_type = mag_data_get_type+'_4_Sa_per_Cyc'
+        
+        mag_data = pyt.get_data(mag_data_get_type)
         acspec_data = pyt.get_data('psp_fld_l2_dfb_ac_spec_dV12hg')
         dcspec_data = pyt.get_data('psp_fld_l2_dfb_dc_spec_dV12hg')
         
@@ -291,13 +325,13 @@ def auto_plot(fd="2018-10-03"):
             #formatter.set_scientific(True) 
             #formatter.set_powerlimits((-1,1)) 
             
-            f = ticker.ScalarFormatter(useOffset=False, useMathText=True)
-            g = lambda x,pos : "${}$".format(f._formatSciNotation('%1.10e' % x))
+            # f = ticker.ScalarFormatter(useOffset=False, useMathText=True)
+            # g = lambda x,pos : "${}$".format(f._formatSciNotation('%1.10e' % x))
             
             
             # create stacked plot of data
             if window_skip == False:
-                
+                plt.rcParams['font.size']='20'
                 B_time_tmp = mag_time_arr[mag_where]
                 B_data_tmp = mag_data_arr[mag_where,:]
                 
@@ -330,9 +364,14 @@ def auto_plot(fd="2018-10-03"):
                 
                 #axs[0].plot(mag_data_tmp,linewidth=0.2)
                 
-                axs1.plot(B_data_tmp[:,0],linewidth=0.2,label='Br')
-                axs1.plot(B_data_tmp[:,1],linewidth=0.2,label='Bt')
-                axs1.plot(B_data_tmp[:,2],linewidth=0.2,label='Bn')
+                if fast:
+                    linewidth = 0.4
+                else:
+                    linewidth = 0.2
+                
+                axs1.plot(B_data_tmp[:,0],linewidth=linewidth,label='Br')
+                axs1.plot(B_data_tmp[:,1],linewidth=linewidth,label='Bt')
+                axs1.plot(B_data_tmp[:,2],linewidth=linewidth,label='Bn')
     
                 leg = axs1.legend(loc='upper right')
                 leg.legendHandles[0].set_linewidth(1.0)
@@ -354,7 +393,7 @@ def auto_plot(fd="2018-10-03"):
                 
                 axs2 = fig.add_subplot(gs[1, :])
                 
-                acspec = axs2.pcolormesh(ac_time_tmp,ac_freq_tmp,ac_data_tmp,cmap='nipy_spectral',shading='nearest',vmax=35) #ac_time_tmp,ac_freq_tmp,
+                acspec = axs2.pcolormesh(ac_time_tmp,ac_freq_tmp,ac_data_tmp,cmap='nipy_spectral',shading='nearest',vmin=-5,vmax=35) #ac_time_tmp,ac_freq_tmp,
                 
                 box = axs2.get_position()
                 axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
@@ -370,7 +409,15 @@ def auto_plot(fd="2018-10-03"):
                 axs2.set_ylim(ac_freq_tmp[2],ac_freq_tmp[51])
                 axs2.set_yticks([5*10e1,10e2,2*10e2,5*10e2,10e3,2*10e3,5*10e3])
                 axs2.set_yticklabels([5*10e1,10e2,2*10e2,5*10e2,10e3,2*10e3,5*10e3])
-                axs2.yaxis.set_major_formatter(ticker.FuncFormatter(g))
+                # axs2.yaxis.set_major_formatter(ticker.FuncFormatter(g))
+                
+                # axs2.yaxis.set_major_formatter(FormatStrFormatter('%1.0e'))
+                
+                # axs2.ticklabel_format(axis='y',style='sci')
+                
+                axs2.yaxis.set_major_formatter(MathTextSciFormatter("%1.2e"))
+                
+                
                 axs2.set_xticks([B_time_tmp[0],B_time_tmp[round(len(B_time_tmp)/3)],\
                                    B_time_tmp[round(2*len(B_time_tmp)/3)],B_time_tmp[(len(B_time_tmp)-1)]])
                 
@@ -486,7 +533,7 @@ def auto_plot(fd="2018-10-03"):
                         r = np.sqrt(pos_data_tmp[:,0]**2+pos_data_tmp[:,1]**2+pos_data_tmp[:,2]**2)/Rs #parker solar probe position in terms of solar radius     
              
                         vel_mag = np.mean(np.sqrt(vel_data_tmp[:,0]**2+vel_data_tmp[:,1]**2+vel_data_tmp[:,2]**2)/Rs) #solar wind velocity in terms of Rs/s             
-                        phi0 = (r-R0)*w*sinlat/vel_mag + lon #back calculate the source carrington degrees longitude from a parker spiral
+                        phi0 = lon + (r-R0)*w*sinlat/vel_mag  #back calculate the source carrington degrees longitude from a parker spiral
                     
                         srce_lat = lat_data_tmp
                         srce_lon = phi0
@@ -548,6 +595,7 @@ def auto_plot(fd="2018-10-03"):
                 plt.cla()
                 plt.close('all')
                 plt.close(fig)
+                print('Saved:'+' '+pys.time_string(ti_doub,fmt='%Y-%m-%d/%H:%M'))
                 
                 del fig
                 del axs1
@@ -564,3 +612,117 @@ def auto_plot(fd="2018-10-03"):
             i_min += 1200.
         #gc.collect()
         i_day += 86400.
+
+def spec_plot(t0="2018-10-03",tf="2018-10-04"):
+    
+    t0_flt = pys.time_float(t0)
+    tf_flt = pys.time_float(tf)
+    
+    mag_in = psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True)    
+    acspec_in = psp.fields(trange=[t0,tf], datatype='dfb_ac_spec', level='l2')
+    
+    mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+    acspec_data = pyt.get_data('psp_fld_l2_dfb_ac_spec_dV12hg')
+    # pyt.tplot_names()
+    mag_time_arr = mag_data[0]
+    mag_data_arr = mag_data[1]
+    
+    acspec_time_arr = acspec_data[0]
+    ac_tmp = acspec_data[1]
+    ac_tmp[ac_tmp==0] = np.nan
+    acspec_data_arr = ac_tmp
+    
+    for f in range(len(ac_tmp[0,:])):
+        noise = median(ac_tmp[:,f])
+        acspec_data_arr[:,f] = 10*np.log10(ac_tmp[:,f]/noise)
+    
+    acspec_data_arr = np.transpose(acspec_data_arr)
+    acspec_freq_arr = np.transpose(acspec_data[2])
+    acspec_freq_lst = acspec_freq_arr[:,0]
+    
+    mag_where = np.where((mag_time_arr > t0_flt) & (mag_time_arr < tf_flt))
+    mag_where = mag_where[0]
+    
+    ac_where = np.where((acspec_time_arr > t0_flt) & (acspec_time_arr < tf_flt))    
+    ac_where = ac_where[0]
+    
+    plt.rcParams['font.size']='20'
+    B_time_tmp = mag_time_arr[mag_where]
+    B_data_tmp = mag_data_arr[mag_where,:]
+    
+    Bmag = np.sqrt(B_data_tmp[:,0]**2+B_data_tmp[:,1]**2+B_data_tmp[:,2]**2) #nT; magnitude of B
+    # Bmag = Bmag*10e-10 #T
+    q = 1.60218*10e-20 #Coulombs
+    me =  9.10938*10e-32 #kg
+    mp =  1.67262*10e-28 #kg
+    Rs = 6.957e5 #solar radius in km    
+    fce = q*Bmag/(2*math.pi*me) #Hz
+    fcp = q*Bmag/(2*math.pi*mp) #Hz
+
+    ac_time_tmp = acspec_time_arr[ac_where]
+    ac_data_tmp = acspec_data_arr[:,ac_where]
+    ac_freq_tmp = acspec_freq_arr[:,ac_where[0]]
+    
+    fig = plt.figure(figsize=(25,13))
+    axs1 = fig.add_subplot(211)
+    
+    acspec = axs1.pcolormesh(ac_time_tmp,ac_freq_tmp,ac_data_tmp,cmap='nipy_spectral',shading='nearest',vmin=-5,vmax=35) #ac_time_tmp,ac_freq_tmp,
+    
+    box = axs1.get_position()
+    axColor= plt.axes([box.x0*1.01 + box.width * 1.01, box.y0, 0.01, box.height])
+    
+    cbar = fig.colorbar(acspec,cax=axColor, label='dB')
+    
+    cbar.ax.tick_params(labelsize=28)
+    cbar.set_label(label='Decibels (dB)', size=28)
+    
+    axs1.set_title("2020-01-29/10:37:00 Quiescent Region",fontsize=34)
+    # fig.suptitle("2020-01-29/10:35:00 Quiescent Region")
+    
+    axs1.set_ylabel('V12 AC Spectrum (Hz)',fontsize=26)
+    
+    axs1.set_yscale('log')
+    axs1.set_ylim([0.5*10e2,7.5*10e3])
+    axs1.set_xticks([])
+    axs1.set_xticklabels([])
+    axs1.tick_params(which='major',width=3,length=9)
+    axs1.tick_params(which='minor',width=2,length=6)
+    axs1.tick_params(axis='y',labelsize=32)
+    
+    axs2 = fig.add_subplot(212)
+    
+    # axs2.plot(B_data_tmp[:,0]/Bmag,linewidth=2,label='Br')
+    # axs2.plot(B_data_tmp[:,1]/Bmag,linewidth=2,label='Bt')
+    # axs2.plot(B_data_tmp[:,2]/Bmag,linewidth=2,label='Bn')
+    
+    axs2.plot(B_data_tmp[:,0],linewidth=2,label='Br')
+    axs2.plot(B_data_tmp[:,1],linewidth=2,label='Bt')
+    axs2.plot(B_data_tmp[:,2],linewidth=2,label='Bn')
+    axs2.plot(Bmag,linewidth=2,label='|B|',color='black')
+    
+    axs2.tick_params(which='major',width=3,length=9)
+    axs2.tick_params(which='minor',width=2,length=6)
+    axs2.tick_params(axis='both',labelsize=26)
+    leg = axs2.legend(loc='upper left',fontsize=26)
+    # leg.get_title().set_fontsize('26')
+    leg.legendHandles[0].set_linewidth(3.0)
+    leg.legendHandles[1].set_linewidth(3.0)
+    leg.legendHandles[2].set_linewidth(3.0)
+    
+    axs2.set_xlim(0, len(B_time_tmp))
+    axs2.set_xlabel('UTC',fontsize=30)
+    axs2.set_ylabel('Magnetic Field Vector B (nT)',fontsize=26)
+    axs2.grid(True)
+    axs2.yaxis.set_minor_locator(AutoMinorLocator())
+    axs2.set_xticks([0,round(len(B_time_tmp)/3),\
+                       round(2*len(B_time_tmp)/3),(len(B_time_tmp)-1)])
+    x_label_list = [pys.time_string(B_time_tmp[0],fmt='%H:%M:%S'),\
+                    pys.time_string(B_time_tmp[round(len(B_time_tmp)/3)],fmt='%H:%M:%S'), \
+                    pys.time_string(B_time_tmp[round(2*len(B_time_tmp)/3)],fmt='%H:%M:%S'), \
+                    pys.time_string(B_time_tmp[len(B_time_tmp)-1],fmt='%H:%M:%S')]
+        
+    axs2.set_xticklabels(x_label_list)
+    # print(B_data_tmp[:,0])
+    plt.subplots_adjust(wspace=3, hspace=0.08)
+    # plt.subplots_adjust(wspace=0, hspace=0)
+    plt.show()
