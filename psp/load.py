@@ -75,7 +75,7 @@ def load(trange=['2018-11-5', '2018-11-6'],
             asterisk =''
             v_form = '_v??'
 
-        pathformat = instrument + '/' + level + '/' + datatype + dateformat+nameform+'_fld_' + level + '_' + datatype + asterisk + dateres + v_form + '.cdf'
+        pathformat = instrument + '/' + level + '/' + datatype + dateformat + nameform + '_fld_' + level + '_' + datatype + asterisk + dateres + v_form + '.cdf'
         file_resolution = 6*3600.
         
     
@@ -84,7 +84,7 @@ def load(trange=['2018-11-5', '2018-11-6'],
             dateformat = '/%Y/%m/'
             
             if level == 'L1':
-                pathformat = 'sweap/spc/'+level+ dateformat + datatype + '/' + 'psp_swp_spc' + datatype + '_%Y%m%d_v??.cdf'
+                pathformat = 'sweap/spc/'+level+ dateformat + datatype + '/' + 'psp_swp_spc_' + datatype + '_%Y%m%d_v??.cdf'
             else:
                 pathformat = 'sweap/spc/'+level+ dateformat +'psp_swp_spc_l'+level[1]+'i_%Y%m%d_v??.cdf'
             

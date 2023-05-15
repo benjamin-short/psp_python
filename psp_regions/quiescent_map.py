@@ -184,7 +184,8 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
 
     #-------------------------------IMPORT DATA-------------------------------#
     
-    pos_in = psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True) #going to be used to plot parker position
+    # pos_in = psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True) #going to be used to plot parker position
+    pos_in = psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
     pos_data = pyt.get_data('position')
     
     pos_time_arr = pos_data[0]
@@ -206,7 +207,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     vr_spc = spc_data_arr[:,0]
     
-    vel_in = psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00')
+    vel_in = psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
     vel_data = pyt.get_data('VEL_RTN_SUN')
     
     vel_time_arr = vel_data[0]
@@ -246,7 +247,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     v_r_x = np.arange(pos_len)/pos_len*(len(vr)-1)
     vr_i = np.interp(v_r_x,v_r_xp,vr)
     
-    vr_span =vr_i
+    vr_span = vr_i
     
     # Vsw = 360 #km/s
     # Vsw_Rs = Vsw/Rs_km
