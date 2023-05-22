@@ -9,7 +9,11 @@ Created on Tue Sep 20 16:28:14 2022
 import os
 import pyspedas.psp as psp
 import pyspedas as pys
+
 import matplotlib.pyplot as plt
+from matplotlib.legend_handler import HandlerBase
+from matplotlib.markers import MarkerStyle
+
 import numpy as np
 import pytplot as pyt
 from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
@@ -27,6 +31,7 @@ import time
 import pickle as pkl
 import _pickle as cpkl
 from streamtracer import StreamTracer, VectorGrid
+import pandas as pd
 
 from .config import CONFIG
 from .config import enc_flt
@@ -36,14 +41,22 @@ from .config import per_dist_lst
 import astropy.units as u
 import astropy.constants as const
 from astropy.coordinates import SkyCoord
+import astropy
+
 import sunpy.map
 from sunpy.net import Fido
 from sunpy.net import attrs as a
 from sunpy.coordinates.sun import carrington_rotation_number as crn
+
+import sunpy.data.sample
+from sunpy.map.header_helper import make_heliographic_header
+
+
 import pfsspy
 import pfsspy.utils
 from pfsspy import coords, tracing
 from pfsspy.sample_data import get_gong_map
+
 
 import matplotlib.patches as mpatch
 
@@ -58,6 +71,21 @@ fields_pass = os.environ['PSP_FIELDS_PW']
 sweap_id = os.environ['PSP_SWEAP_ID']
 sweap_pass = os.environ['PSP_SWEAP_PW']
 
+jsoc_email = os.environ['JSOC_EMAIL']
+
+class MarkerSizeHandler(HandlerBase):
+    def create_artists(self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans):
+        marker_style = orig_handle.get_marker()
+        marker_size = 2  # Define the desired marker size
+
+        x = width // 2 - marker_size / 2
+        y = height // 2 - marker_size / 2
+
+        marker = MarkerStyle(marker_style)
+        marker._transform = marker.get_transform().scale(marker_size)
+
+        return [plt.Line2D([x], [y], marker=marker)]
+
 def loadall(filename):
     with open(filename, "rb") as f:
         while True:
@@ -68,18 +96,21 @@ def loadall(filename):
 
 
 def group_elements(A, B):
+    
     """
     Group elements in Array A to elements in Array B
     by which element in Array B is closest to the element in Array A.
     Returns an array with the indices of the closest elements in Array B
     for each element in Array A.
     """
+    
     indices = np.zeros_like(A, dtype=np.int32)
     for i, a in enumerate(A):
         indices[i] = np.argmin(np.abs(B - a))
     return indices
 
 def set_axes_equal(ax):
+    
     '''Make axes of 3D plot have equal scale so that spheres appear as spheres,
     cubes as cubes, etc..  This is one possible solution to Matplotlib's
     ax.set_aspect('equal') and ax.axis('equal') not working for 3D.
@@ -106,11 +137,8 @@ def set_axes_equal(ax):
     ax.set_xlim3d([x_middle - plot_radius, x_middle + plot_radius])
     ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
-    
-    
 
 def q_test(enc=1):
-
 
     if enc is not None:
         print(5)    
@@ -132,7 +160,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
 
         # enc_num = enc
         
-        hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/' #historical poaition
+        hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/' #historical position
         pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
         hpos = pyt.get_data('position')
         
@@ -167,8 +195,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         t0 = pys.time_string(time_select[0])
         tf = pys.time_string(time_select[-1])
     
-    
-    # breakpoint()
+
     if r_tmp==None:
         r_tmp=rss
     
@@ -179,8 +206,6 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     def set_axes_lims(ax):
         ax.set_xlim(0, 360)
         ax.set_ylim(0, 180)
-
-        
 
     #-------------------------------IMPORT DATA-------------------------------#
     
@@ -195,20 +220,18 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     y = pos_data_arr[:,1]
     z = pos_data_arr[:,2]
     
-    spc_in = psp.spc(trange=[t0,tf],level='L3')
-    spc_data = pyt.get_data('vp_fit_RTN')
-    
+    spc_in = psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
+    spc_data = pyt.get_data('psp_spc_vp_fit_RTN')
+
     spc_time_arr = spc_data[0]
     spc_data_arr = spc_data[1]
     
     res_check = np.diff(spc_time_arr)
-    
-    # breakpoint()
-    
+
     vr_spc = spc_data_arr[:,0]
     
     vel_in = psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-    vel_data = pyt.get_data('VEL_RTN_SUN')
+    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
     
     vel_time_arr = vel_data[0]
     vel_data_arr = vel_data[1]
@@ -321,20 +344,24 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     unique_indices, ind_count = np.unique(indices,return_counts=True)
     
-    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/'
-    fieldline_savepath = "/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/"
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
+    fieldline_savepath = "/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/pfss_files/"
     
     if enc != None:    
         tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords.cdf'
         fieldline_savename = 'Enc_'+str(enc)+'_field_lines.pkl'
     else:
-        tplot_savename = t0+'_'+tf+'_footpoint_coords.cdf'
-        fieldline_savename = t0+'_'+tf+'_field_lines.pkl'
+        t0_name = t0[:10]
+        tf_name = tf[:10]
+        
+        tplot_savename = t0_name+'_'+tf_name+'_footpoint_coords.cdf'
+        fieldline_savename = t0_name+'_'+tf_name+'_field_lines.pkl'
     
     progress = np.linspace(0,pos_len,21)
     i=0
     ftprnt_lon = []
     ftprnt_lat = []
+    polar_tmp = []
     i_non_breaks = []
     # field_lines = []
     with open(fieldline_savepath+fieldline_savename,'wb') as file:
@@ -365,8 +392,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
             field_lines_tmp = tracer.trace(seeds, pfss_out)
             
-            # pkl.dump(save_lines, file)
-            cpkl.dump(field_lines_tmp, file)
+            """# cpkl.dump(field_lines_tmp, file)""" 
 
             for field_line in field_lines_tmp:
                 # cpkl.dump(field_line, file)
@@ -376,10 +402,10 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
                 coord_check = field_line.coords
                 if coord_check.shape != (0,):
                     coords = field_line.solar_footpoint
-
+                    pol = field_line.polarity
                     ftprnt_lon.append(float(coords.lon/u.deg))
                     ftprnt_lat.append(float(coords.lat/u.deg))
-                    
+                    polar_tmp.append(pol)
                     i_non_breaks.append(i)
 
                 i+=1
@@ -476,6 +502,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     PSP_lat = np.array(carr_lat_psp[i_non_breaks])
     PSP_Rs = np.array(r0_Rs[i_non_breaks])
     Vsw_Rs_new = np.array(Vsw_Rs[i_non_breaks])
+    polarity = np.array(polar_tmp)
         
     
     
@@ -494,6 +521,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     tplot_carr_lat = PSP_lat
     tplot_r0_Rs = PSP_Rs
     tplot_rss = np.array([rss])
+    tplot_polarity = polarity
 
     tplot_Vsw_Rs = Vsw_Rs_new
     
@@ -507,24 +535,12 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     pyt.store_data("PSP_Rs", data={'x':tplot_time, 'y':tplot_r0_Rs})
     pyt.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
     pyt.store_data("Vsw_Rs",data={'x':tplot_time, 'y':tplot_Vsw_Rs})
+    
+    pyt.store_data("polarity",data={'x':tplot_time, 'y':tplot_polarity})
 
-    cdf_var_list = ["solar_lon","solar_lat","PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs"]
+    cdf_var_list = ["solar_lon","solar_lat","PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","polarity"]
     
     pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
-    
-    
-    #--------------------SAVING THE WHOLE PFSS OUTPUT---------------------#
-    
-    # save_lines = field_lines
-    # fieldline_savepath = "/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/"
-    # if enc != None:    
-    #     fieldline_savename = 'Enc_'+str(enc)+'_field_lines.pkl'
-    # else:
-    #     fieldline_savename = t0+'_'+tf+'_field_lines.pkl'
-    
-    # with open(fieldline_savepath+fieldline_savename,'wb') as file:
-    #     # pkl.dump(save_lines, file)
-    #     cpkl.dump(save_lines, file)
 
 def quiescent_plots(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True):
     
@@ -562,6 +578,8 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True
         
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/'
     
+    # breakpoint()
+    
     pyt.tplot_restore(tplot_savepath+tplot_savename)
     
     # breakpoint()
@@ -589,7 +607,7 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True
     t0p = pys.time_string(carr_lon_time[0])
     tfp = pys.time_string(carr_lon_time[-1])
     
-    pos_in = psp.fields(trange=[t0p,tfp], datatype='ephem_spp_hg', level='l1',last_version=True) #going to be used to plot parker position
+    pos_in = psp.fields(trange=[t0p,tfp], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
     pos_data = pyt.get_data('position')
     
     pos_time_arr = pos_data[0]
@@ -753,6 +771,262 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True
         # ax2.tick_params(axis='both', which='minor', labelsize=8)
         # ax.set_aspect("equal")
         plt.show()
+        
+def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,wavelen=171):
+    
+    Rs_km = 6.957e5 #solar radius in km  
+    Rs = Rs_km*10**3
+    w = 360/(25.38*86400) # angular frequency of the sun in degrees/sec
+    # w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
+
+    euv_chn_opts = [94, 131, 171, 193, 211, 304, 335, 1600, 1700,4500]
+    uv_chn_opts = [1600, 1700]
+    vis_chn_opts = [4500]
+
+    euv_aia = 'aia.lev1_euv_12s'
+    uv_aia = 'aia.lev1_uv_24s'
+    vis_aia = 'aia.lev1_vis_1h'
+    
+    if wavelen in euv_chn_opts:
+        aia_lab = euv_aia
+        sec = 12.
+    elif wavelen in uv_chn_opts:
+        aia_lab = uv_aia
+        sec = 24.
+    elif wavelen in vis_chn_opts:
+        aia_lab = vis_aia
+        sec = 3600.
+    else:
+        
+        print("Channel option not valid, setting wavelength to 171A.")
+        aia_lab = euv_aia
+        wavelen=171
+        sec = 12.
+
+
+    #------------------------------ Set path to tplot and quiescent region files ----------------------------------#
+
+    if tf==None:
+        tf = pys.time_string(pys.time_float(t0)+86400)
+
+    if enc != None:    
+        tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords.cdf'
+        qregion_savename = 'enc_'+str(enc)+'_regions_raw.csv'
+    else:
+        tplot_savename = t0+'_'+tf+'_footpoint_coords.cdf'
+        qregion_savename = t0+'_'+tf+'_regions_raw.csv'
+        
+        t0float = pys.time_float(t0)
+        enc = 1
+        for i in enc_flt:
+            if t0float>i[0] and t0float<i[1]:
+                encounter = enc
+            enc+=1
+        if tf==None:
+            tffloat = pys.time_float(t0)+86400
+        else:
+            tffloat=pys.time_float(tf)
+        
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
+    qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    fits_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fits/'
+    fits_savename = 'AIA20220225_1702_0193.fits'
+    # fits_savename = 'CR2232.fits'
+
+    # breakpoint()
+    #------------------------------ Read in Tplot Variables ----------------------------------#
+    
+    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    
+    rss_data = pyt.get_data('rss')
+    rss = rss_data[0]
+    rss = rss[0]
+    
+    carr_lon_data = pyt.get_data('PSP_lon')
+    carr_lon_time = carr_lon_data[0]
+    carr_lon = carr_lon_data[1]
+    
+    carr_lat_data = pyt.get_data('PSP_lat')
+    carr_lat = carr_lat_data[1]
+    
+    sintheta = np.sin((90-carr_lat)*np.pi/180) #sin of the azimuthal angle, which is 90 degrees minus the latitude
+    
+    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_time = solar_lon_data[0]
+    sol_lon = solar_lon_data[1]
+    
+    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_time = sol_lat_data[0]
+    sol_lat = sol_lat_data[1]
+    
+    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_time = r0_Rs_data[0]
+    r0_Rs = r0_Rs_data[1]
+    
+    rs_where = np.where(r0_Rs==min(r0_Rs))
+    
+    date = pys.time_string(r0_Rs_time[rs_where])
+    t0d = date[0]
+    # t0d = date[0][:10]
+    tfd = pys.time_string(pys.time_float(t0d)+sec)
+    # breakpoint()
+    
+    Vsw_Rs_data = pyt.get_data('Vsw_Rs')
+    Vsw_Rs = Vsw_Rs_data[1]
+    
+    t0p = pys.time_string(carr_lon_time[0])
+    tfp = pys.time_string(carr_lon_time[-1])
+    
+    #------TESTING------#
+    
+    # data, header = astropy.io.fits.info(fits_savepath+fits_savename)
+    # header['cunit1'] = 'arcsec' 
+    # header['cunit2'] = 'arcsec' 
+    
+    # aia_map = sunpy.map.Map(data, header) 
+    # aia_map = sunpy.map.Map(fits_savepath+fits_savename)
+    # plt.figure()
+    # aia_map.plot()
+    
+    # # plt.show()
+    
+    # shape = (720, 1440)
+    # carr_header = make_heliographic_header(aia_map.date, aia_map.observer_coordinate, shape, frame='carrington')
+    
+    # outmap = aia_map.reproject_to(carr_header)
+    
+    # plt.figure()
+    # outmap.plot()
+    # # outmap.draw_limb(color='blue')
+
+    # plt.show()
+    
+    #------TESTING------#
+    
+    #---------------------------- Read in quiescent regions --------------------------------#
+    
+    # breakpoint()
+    
+    qregion_df = pd.read_csv(qregion_savepath+qregion_savename)
+    qregion_array = qregion_df.to_numpy()
+    
+    if enc != None:    
+        regions_arr = qregion_array
+        
+    else:
+        
+        pre_flt = qregion_array[:,:2]
+        
+        qregion_lst = []
+        for j in pre_flt:
+            qregion_lst.append(pys.time_float(j))
+        qregion_flt = np.array(qregion_lst) 
+        reg_where = np.where((qregion_flt[:,0]>t0float)&(qregion_flt[:,1]<tffloat))
+        
+        regions_arr = qregion_array[reg_where,:]
+        
+    
+    #---------------- find footpoints associated with quiescent regions --------------------#
+    region_time = np.array([])
+    region_foot_lon = np.array([])
+    region_foot_lat = np.array([])
+    for k in regions_arr:
+        # breakpoint()
+        pre_flt = k[:2]
+        reg_flt = pys.time_float(pre_flt)
+        point_where = np.where((carr_lon_time>reg_flt[0])&(carr_lon_time<reg_flt[1]))
+        point_where = point_where[0]
+        
+        region_time_tmp = solar_lon_time[point_where]
+        region_foot_lon_tmp =  sol_lon[point_where]
+        region_foot_lat_tmp = sol_lat[point_where]
+        
+        region_time = np.append(region_time,region_time_tmp)
+        region_foot_lon = np.append(region_foot_lon,region_foot_lon_tmp)
+        region_foot_lat = np.append(region_foot_lat,region_foot_lat_tmp)
+
+    # breakpoint()
+    
+    
+    #------------------------------ Read in SECCHI Images ----------------------------------#
+    
+    # """ STEREO and SOHO Image Data, 171 Angstrom """
+    # download171 = ste.secchi(trange=[t0d,tfd],chn=chn)
+    # download = np.array(download171)
+    
+    # image = download[int(len(download)/2)]
+    
+    sol_lon_new = np.where(sol_lon<0, sol_lon+360., sol_lon)
+    region_foot_lon_new = np.where(region_foot_lon<0, region_foot_lon+360., region_foot_lon)
+    carr_lon_new = np.where(carr_lon<0, carr_lon+360., carr_lon)
+    
+    # image = '/Users/besh2109/spedas_data/stereo/secchi/2018/11/07/284/20181107_061630_284.jpg'
+    # breakpoint()
+    
+    #------------------------------ Generate in Footpoint Plot ----------------------------------#
+    
+    fig = plt.figure(figsize=(25,20))
+    # breakpoint()
+    res = Fido.search(a.Time(t0d, tfd),a.jsoc.Series(aia_lab), a.Wavelength(wavelen*u.AA),a.jsoc.Notify(jsoc_email))  
+    
+    # breakpoint()
+    
+    files = Fido.fetch(res)
+    aia_map = sunpy.map.Map(files[0])
+
+    
+    shape = (720, 1440)
+    carr_header = make_heliographic_header(aia_map.date, aia_map.observer_coordinate, shape, frame='carrington')
+    
+    outmap = aia_map.reproject_to(carr_header)
+    
+    axs = plt.subplot(projection=outmap)
+    
+    im = outmap.plot()
+
+    
+    sol_coords = SkyCoord(sol_lon*u.deg, sol_lat*u.deg, frame=outmap.coordinate_frame)
+    carr_coords = SkyCoord(carr_lon*u.deg, carr_lat*u.deg, frame=outmap.coordinate_frame)
+    q_coords = SkyCoord(region_foot_lon*u.deg, region_foot_lat*u.deg, frame=outmap.coordinate_frame)
+
+    sol_p = axs.plot_coord(sol_coords, '.', color="lime",markersize=0.75,label='PFSS Footpoints')
+    carr_p = axs.plot_coord(carr_coords, '.', color="red",markersize=0.3,label='PSP Carrington Coords')
+    q_p = axs.plot_coord(q_coords, 'v', color="blue",markersize=2,label='PFSS Footpoints')
+    
+    # img1 = plt.imread(outmap)
+    # img1 = plt.imread(image)
+    axs.set_title('PSP Footpoints and Position on top of AIA '+str(wavelen)+'A Images for Encounter '+str(enc),fontsize=18)
+    axs.set_ylabel('Carrington Lattitude',fontsize=14)
+    axs.set_xlabel('Carrington Longitude',fontsize=14)
+
+    axs.tick_params(axis='both', which='major', labelsize=14)
+    # axs.tick_params(axis='both', which='minor', labelsize=12)
+    
+    
+    
+    # marker_size = 36
+    # def update_prop(handle, orig):
+    #     handle.update_from(orig)
+    #     handle.set_sizes([marker_size])
+    
+    # plt.legend(handler_map={type(sol_p): HandlerPathCollection(update_func=update_prop)})
+    
+    
+
+            # return [plt.Line2D([x], [y], marker=marker, color='black')]
+    
+    handles, labels = axs.get_legend_handles_labels()
+    handler_map = {type(sol_p): MarkerSizeHandler() for sol_p in handles}
+    leg = axs.legend(handles, labels, handler_map=handler_map,fontsize=18)
+    
+    leg.legendHandles[0].set_color('lime')
+    leg.legendHandles[1].set_color('red')
+    leg.legendHandles[2].set_color('blue')
+
+    plt.show()
+    
+    
+    # breakpoint()
 
 def hmi_ex(t0='2018-11-05',rss=2.5):
     ###############################################################################
@@ -774,7 +1048,7 @@ def hmi_ex(t0='2018-11-05',rss=2.5):
     # If you use this code, please replace this email address
     # with your own one, registered here:
     # http://jsoc.stanford.edu/ajax/register_email.html
-    result = Fido.search(time, series, crot, a.jsoc.Notify("besh2109@colorado.edu"))
+    result = Fido.search(time, series, crot, a.jsoc.Notify(jsoc_email))
     files = Fido.fetch(result)
 
     ###############################################################################
@@ -937,35 +1211,3 @@ def gong_ex(t0='2020-01-29',rss=2.5):
 
     ax.set_title('PFSS solution at '+str(rss)+' Rs')
     plt.show()
-    
-    # fig, ax = plt.subplots(figsize=(10,10))
-    # ax.set_aspect('equal')
-    
-    # # Take 32 start points spaced equally in theta
-    # # r_tmp = 1.5
-    # r = r_tmp * const.R_sun
-    # lon = np.pi / 2 * u.rad
-    # lat = np.linspace(-np.pi / 2, np.pi / 2, 33) * u.rad
-    # seeds = SkyCoord(lon, lat, r, frame=pfss_out.coordinate_frame)
-    
-    # tracer = pfsspy.tracing.FortranTracer()
-    # field_lines = tracer.trace(seeds, pfss_out)
-    
-    # for field_line in field_lines:
-    #     coords = field_line.coords
-    #     coords.representation_type = 'cartesian'
-    #     color = {0: 'black', -1: 'tab:blue', 1: 'tab:red'}.get(field_line.polarity)
-    #     ax.plot(coords.y / const.R_sun,
-    #             coords.z / const.R_sun, color=color)
-
-    # # Add inner and outer boundary circles
-    # ax.add_patch(mpatch.Circle((0, 0), 1, color='k', fill=False))
-    # ax.add_patch(mpatch.Circle((0, 0), r_tmp, color='k', fill=False,linestyle='dotted'))
-    # ax.add_patch(mpatch.Circle((0, 0), pfss_in.grid.rss, color='k', linestyle='--',
-    #                             fill=False))
-    # ax.set_title('PFSS solution with seed height at '+str(r_tmp)+' Rs')
-    # plt.show()
-    
-    
-    # breakpoint()
-    # sphinx_gallery_thumbnail_number = 4

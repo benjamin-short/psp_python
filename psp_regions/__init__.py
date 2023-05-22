@@ -20,6 +20,7 @@ from .quiescent_map import quiescent_plots
 from .quiescent_map import hmi_ex
 from .quiescent_map import gong_ex
 from .quiescent_map import q_test
+from .quiescent_map import footpoint_plot
 from .quiescent_analysis import t_r_plot
 from .quiescent_analysis import dura_r_plot
 from .davidtensor import david_rot_mat
