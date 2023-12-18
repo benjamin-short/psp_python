@@ -65,6 +65,9 @@ from mpl_toolkits.mplot3d import proj3d
 
 import warnings
 
+import glob
+from datetime import datetime
+
 fields_id = os.environ['PSP_FIELDS_ID']
 fields_pass = os.environ['PSP_FIELDS_PW']
 
@@ -76,7 +79,7 @@ jsoc_email = os.environ['JSOC_EMAIL']
 class MarkerSizeHandler(HandlerBase):
     def create_artists(self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans):
         marker_style = orig_handle.get_marker()
-        marker_size = 2  # Define the desired marker size
+        marker_size = 4  # Define the desired marker size
 
         x = width // 2 - marker_size / 2
         y = height // 2 - marker_size / 2
@@ -93,7 +96,6 @@ def loadall(filename):
                 yield cpkl.load(f)
             except EOFError:
                 break
-
 
 def group_elements(A, B):
     
@@ -231,7 +233,11 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     vr_spc = spc_data_arr[:,0]
     
     vel_in = psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    # breakpoint()
+    try:
+        vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    except:
+        vel_data = pyt.get_data('VEL_RTN_SUN')
     
     vel_time_arr = vel_data[0]
     vel_data_arr = vel_data[1]
@@ -294,9 +300,19 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     sintheta = np.sin((90-carr_lat_psp)*np.pi/180) #sin of the azimuthal angle, which is 90 degrees minus the latitude
     
     src_lon = carr_lon_psp - (w*sintheta/Vsw_Rs)*(rss-r0_Rs) #carrington longitude of the PSP traced by a Parker Spiral on the source surface
+    
+    # t0_del = pys.time_string(corrected_time[first_non_nan_index])
+    # t0_del = pys.time_string(corrected_time[0])
+    # tf_del = pys.time_string(corrected_time[last_non_nan_index])
+    # tf_del = pys.time_string(corrected_time[-1])
+   
+     # arr = np.array([1, np.nan, 3, np.nan, 5, np.nan])
 
-    t0_del = pys.time_string(corrected_time[0])
-    tf_del = pys.time_string(corrected_time[-1])
+    # Create a new array with non-NaN elements
+    non_nan_corrected_time = corrected_time[~np.isnan(corrected_time)]
+    
+    t0_del = pys.time_string(non_nan_corrected_time[0])
+    tf_del = pys.time_string(non_nan_corrected_time[-1])
    
     #--------------------------PFSS MODEL START-----------------------------#
     
@@ -340,7 +356,17 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     gong_floats = pys.time_float(gong_dates)
     
-    indices = group_elements(corrected_time,gong_floats)
+    # indices = group_elements(corrected_time,gong_floats)
+    indices = group_elements(non_nan_corrected_time,gong_floats)
+    
+    # fig = plt.figure(figsize=(20,10))
+    
+    # ax = plt.subplot()
+    # ax.plot(non_nan_corrected_time)
+    # ax.plot(gong_floats)
+    # plt.show()
+    
+    # breakpoint()
     
     unique_indices, ind_count = np.unique(indices,return_counts=True)
     
@@ -392,7 +418,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
             field_lines_tmp = tracer.trace(seeds, pfss_out)
             
-            """# cpkl.dump(field_lines_tmp, file)""" 
+            """# cpkl.dump(field_lines_tmp, file) No longer outputing the field_line objects to a pickle file. Saving storage space.""" 
 
             for field_line in field_lines_tmp:
                 # cpkl.dump(field_line, file)
@@ -411,56 +437,6 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
                 i+=1
 
     
-    # field_lines = pfsspy.fieldline.FieldLines(field_lines)
-    #
-    # breakpoint()
-    #
-    # gong_map = sunpy.map.Map(gong_fname[int(len(gong_fname)/2)])
-
-    # ###############################################################################
-    # # From the boundary condition, number of radial grid points, and source
-    # # surface, we now construct an Input object that stores this information
-    # pfss_in = pfsspy.Input(gong_map, nrho, rss)
-
-
-    # # def set_axes_lims(ax):
-    # #     ax.set_xlim(0, 360)
-    # #     ax.set_ylim(0, 180)
-
-    # ###############################################################################
-    # # Now calculate the PFSS solution
-    
-    # pfss_out = pfsspy.pfss(pfss_in)
-    
-
-    # tracer = tracing.FortranTracer()
-    # r = r_tmp * const.R_sun
-    
-    # r2 = (r_tmp-0.2)*const.R_sun
-    
-    # lat = carr_lat_psp
-    # lon = src_lon
-    
-    # lat, lon = lat.ravel() * u.deg, lon.ravel() * u.deg
-    
-    # seeds = SkyCoord(lon, lat, r, frame=pfss_out.coordinate_frame)
-
-    # field_lines = tracer.trace(seeds, pfss_out)
-    
-    # breakpoint()
-    
-    # lat2 = np.linspace(-np.pi / 2, np.pi / 2,8, endpoint=False)
-    # # lon2 = np.linspace(np.pi/2, np.pi*(5/6), 6, endpoint=False)
-    # lon2 = np.linspace(0, 2*np.pi, 8, endpoint=False)
-    # lat2, lon2 = np.meshgrid(lat2, lon2, indexing='ij')
-    
-
-    # lat2, lon2 = lat2.ravel() * u.rad, lon2.ravel() * u.rad
-
-
-    # seeds2 = SkyCoord(lon2, lat2, r2, frame=pfss_out.coordinate_frame)
-    
-    # field_lines2 = tracer.trace(seeds2, pfss_out)
 
 
     # breakpoint()
@@ -469,29 +445,6 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     lon = src_lon
 
     #------------------SAVING THE FOOTPOINT COORDINATES-------------------#
-        
-    # progress = np.linspace(0,pos_len,21)
-    # # i_break = 45468
-
-    # ftprnt_lon = []
-    # ftprnt_lat = []
-    # i_non_breaks = []
-    
-    # i=0
-    # for field_line in field_lines:
-    #     if i in progress:
-    #         print(int(100*i/pos_len),'%')
-        
-    #     coord_check = field_line.coords
-    #     if coord_check.shape != (0,):
-    #         coords = field_line.solar_footpoint
-
-    #         ftprnt_lon.append(float(coords.lon/u.deg))
-    #         ftprnt_lat.append(float(coords.lat/u.deg))
-            
-    #         i_non_breaks.append(i)
-
-    #     i+=1
     
 
     sol_long = np.array(ftprnt_lon)
@@ -503,15 +456,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     PSP_Rs = np.array(r0_Rs[i_non_breaks])
     Vsw_Rs_new = np.array(Vsw_Rs[i_non_breaks])
     polarity = np.array(polar_tmp)
-        
-    
-    
-    # if enc != None:    
-    #     tplot_savename = 'Enc_'+str(enc)+'_quiescent_coords.cdf'
-    # else:
-    #     tplot_savename = t0+'_'+tf+'_quiescent_coords.cdf'
-
-    # tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/'
+    c_time = np.array(corrected_time[i_non_breaks])
 
     tplot_time = date_flts
     
@@ -522,7 +467,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     tplot_r0_Rs = PSP_Rs
     tplot_rss = np.array([rss])
     tplot_polarity = polarity
-
+    tplot_c_time = c_time
     tplot_Vsw_Rs = Vsw_Rs_new
     
 
@@ -537,12 +482,13 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     pyt.store_data("Vsw_Rs",data={'x':tplot_time, 'y':tplot_Vsw_Rs})
     
     pyt.store_data("polarity",data={'x':tplot_time, 'y':tplot_polarity})
+    pyt.store_data("corrected_time",data={'x':tplot_time, 'y':tplot_c_time})
 
     cdf_var_list = ["solar_lon","solar_lat","PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","polarity"]
     
     pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
 
-def quiescent_plots(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True):
+def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=False,plot=True):
     
     Rs_km = 6.957e5 #solar radius in km  
     Rs = Rs_km*10**3
@@ -772,14 +718,14 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True
         # ax.set_aspect("equal")
         plt.show()
         
-def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,wavelen=171):
+def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,wavelen=171,instr='AIA',region_labels=False,plot_shape='circ',zoom=False):
     
     Rs_km = 6.957e5 #solar radius in km  
     Rs = Rs_km*10**3
     w = 360/(25.38*86400) # angular frequency of the sun in degrees/sec
     # w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
 
-    euv_chn_opts = [94, 131, 171, 193, 211, 304, 335, 1600, 1700,4500]
+    euv_chn_opts = [94, 131, 171, 193, 211, 304, 335]
     uv_chn_opts = [1600, 1700]
     vis_chn_opts = [4500]
 
@@ -925,11 +871,21 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         
         regions_arr = qregion_array[reg_where,:]
         
-    
+    # breakpoint()
     #---------------- find footpoints associated with quiescent regions --------------------#
     region_time = np.array([])
     region_foot_lon = np.array([])
     region_foot_lat = np.array([])
+    
+    carr_lat_max = np.array([])
+    carr_lat_min = np.array([])
+    carr_lon_max = np.array([])
+    carr_lon_min = np.array([])
+    
+    long_region_time = np.array([])
+    long_region_foot_lon = np.array([])
+    long_region_foot_lat = np.array([])
+    
     for k in regions_arr:
         # breakpoint()
         pre_flt = k[:2]
@@ -940,15 +896,60 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         region_time_tmp = solar_lon_time[point_where]
         region_foot_lon_tmp =  sol_lon[point_where]
         region_foot_lat_tmp = sol_lat[point_where]
-        
+
         region_time = np.append(region_time,region_time_tmp)
         region_foot_lon = np.append(region_foot_lon,region_foot_lon_tmp)
         region_foot_lat = np.append(region_foot_lat,region_foot_lat_tmp)
+        
+        # breakpoint()
+        
+        if len(point_where) != 0:
+        
+            carr_lat_max = np.append(carr_lat_max,np.max(region_foot_lat_tmp))
+            carr_lat_min = np.append(carr_lat_min,np.min(region_foot_lat_tmp))
+            
+            carr_lon_max = np.append(carr_lon_max,np.max(region_foot_lon_tmp))
+            carr_lon_min = np.append(carr_lon_min,np.min(region_foot_lon_tmp))
+            
+        else:
+            
+            carr_lat_max = np.append(carr_lat_max,np.nan)
+            carr_lat_min = np.append(carr_lat_min,np.nan)
+            
+            carr_lon_max = np.append(carr_lon_max,np.nan)
+            carr_lon_min = np.append(carr_lon_min,np.nan)
+        
+        if k[2] > 1800.0:
+            
+            long_region_time_tmp = solar_lon_time[point_where]
+            long_region_foot_lon_tmp =  sol_lon[point_where]
+            long_region_foot_lat_tmp = sol_lat[point_where]
+            
+            long_region_time = np.append(long_region_time,long_region_time_tmp)
+            long_region_foot_lon = np.append(long_region_foot_lon,long_region_foot_lon_tmp)
+            long_region_foot_lat = np.append(long_region_foot_lat,long_region_foot_lat_tmp)
+            
 
+    csv_arr = np.array([regions_arr[:,0],regions_arr[:,1],regions_arr[:,2],carr_lat_max,carr_lat_min,carr_lon_max,carr_lon_min])
+    
+    csv_arr = np.transpose(csv_arr)
+    #print(csv_arr.shape)
+    
     # breakpoint()
     
+    csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    csv_savename = 'enc_'+str(enc)+'_regions_footpoints.csv'
+    csv_isdir = os.path.isdir(csv_savepath)
+
+    if csv_isdir == False:
+        os.makedirs(csv_savepath)
     
-    #------------------------------ Read in SECCHI Images ----------------------------------#
+    csv_isfile = os.path.isfile(csv_savepath+csv_savename)
+    
+    with open(csv_savepath+csv_savename,"w") as file:
+        # breakpoint()
+        np.savetxt(file,csv_arr,header='start dates,end dates,duration,lat_max,lat_min,lon_max,lon_min',delimiter=',',fmt='%s',comments='')
+        
     
     # """ STEREO and SOHO Image Data, 171 Angstrom """
     # download171 = ste.secchi(trange=[t0d,tfd],chn=chn)
@@ -959,69 +960,159 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     sol_lon_new = np.where(sol_lon<0, sol_lon+360., sol_lon)
     region_foot_lon_new = np.where(region_foot_lon<0, region_foot_lon+360., region_foot_lon)
     carr_lon_new = np.where(carr_lon<0, carr_lon+360., carr_lon)
+    # long_region_foot_lon_new = np.where(region_foot_lon<0, region_foot_lon+360., region_foot_lon)
     
     # image = '/Users/besh2109/spedas_data/stereo/secchi/2018/11/07/284/20181107_061630_284.jpg'
     # breakpoint()
     
+    
+    
+    #------------------------------ Read in AIA Images ----------------------------------#
+    
+    """ Check to see if AIA file already exists. They are large files and the program runs slow if sunpy gets carried away."""
+    
+    date_form = pys.time_string(r0_Rs_time[rs_where],fmt='%Y-%m-%dT%H')
+    
+    file_path = os.environ.get('SUNPY_DOWNLOADDIR')+'/AIA/'+str(wavelen)+'/'+t0d[:4]+'/'+t0d[5:7]+'/'+t0d[8:10]+'/'
+    file_name = aia_lab+'.'+date_form[0]+'*Z'+'.'+str(wavelen)+'.image_lev1.fits'
+    
+    pattern = file_path+file_name
+
+    if any(os.path.isfile(file) for file in glob.glob(pattern)):
+        print("File exists!")
+        files = glob.glob(pattern)
+        """If it exists locally already, use it."""        
+    else:
+        print("File does not exist!")
+        res = Fido.search(a.Time(t0d, tfd),a.jsoc.Series(aia_lab), a.Wavelength(wavelen*u.AA),a.jsoc.Notify(jsoc_email)) 
+        files = Fido.fetch(res[0,0], path=file_path)
+        # breakpoint()
+        files = glob.glob(pattern)
+        """If it doesn't exist, find it and download it.""" 
+    
+    # breakpoint()
+    
     #------------------------------ Generate in Footpoint Plot ----------------------------------#
     
-    fig = plt.figure(figsize=(25,20))
-    # breakpoint()
-    res = Fido.search(a.Time(t0d, tfd),a.jsoc.Series(aia_lab), a.Wavelength(wavelen*u.AA),a.jsoc.Notify(jsoc_email))  
-    
-    # breakpoint()
-    
-    files = Fido.fetch(res)
+    # files = Fido.fetch(res[0,0], path=file_path)
     aia_map = sunpy.map.Map(files[0])
 
-    
+    fig = plt.figure(figsize=(25,20))
     shape = (720, 1440)
-    carr_header = make_heliographic_header(aia_map.date, aia_map.observer_coordinate, shape, frame='carrington')
     
+    carr_header = make_heliographic_header(aia_map.date, aia_map.observer_coordinate, shape, frame='carrington')
     outmap = aia_map.reproject_to(carr_header)
     
-    axs = plt.subplot(projection=outmap)
+    if plot_shape == 'flat':
+        axs = plt.subplot(projection=outmap) 
+        im = outmap.plot(clip_interval=(1, 99.99)*u.percent)
+        
+    elif plot_shape == 'circ':
     
-    im = outmap.plot()
+        axs = plt.subplot(projection=aia_map)
+        im = aia_map.plot(clip_interval=(1, 99.99)*u.percent)
+        # aia_map.draw_grid(axes=axs)
+        # pass
 
+
+    if zoom:
+        xlims_world = [-400, 200]*u.arcsec
+        ylims_world = [0, 600]*u.arcsec
+
+        world_coords = SkyCoord(Tx=xlims_world, Ty=ylims_world, frame=aia_map.coordinate_frame)
+        pixel_coords = aia_map.world_to_pixel(world_coords)
     
+        # we can then pull out the x and y values of these limits.
+        xlims_pixel = pixel_coords.x.value
+        ylims_pixel = pixel_coords.y.value
+    else:
+        xlims_world = [-1000, 1000]*u.arcsec
+        ylims_world = [-700, 700]*u.arcsec
+
+        # world_coords = SkyCoord(Tx=xlims_world, Ty=ylims_world, frame=aia_map.coordinate_frame)
+        # pixel_coords = aia_map.world_to_pixel(world_coords)
+    
+        # # we can then pull out the x and y values of these limits.
+        # xlims_pixel = pixel_coords.x.value
+        # ylims_pixel = pixel_coords.y.value
+    
+
     sol_coords = SkyCoord(sol_lon*u.deg, sol_lat*u.deg, frame=outmap.coordinate_frame)
-    carr_coords = SkyCoord(carr_lon*u.deg, carr_lat*u.deg, frame=outmap.coordinate_frame)
+    # carr_coords = SkyCoord(carr_lon*u.deg, carr_lat*u.deg, frame=aia_map.coordinate_frame)
     q_coords = SkyCoord(region_foot_lon*u.deg, region_foot_lat*u.deg, frame=outmap.coordinate_frame)
-
-    sol_p = axs.plot_coord(sol_coords, '.', color="lime",markersize=0.75,label='PFSS Footpoints')
-    carr_p = axs.plot_coord(carr_coords, '.', color="red",markersize=0.3,label='PSP Carrington Coords')
-    q_p = axs.plot_coord(q_coords, 'v', color="blue",markersize=2,label='PFSS Footpoints')
+    long_q_coords = SkyCoord(long_region_foot_lon*u.deg, long_region_foot_lat*u.deg, frame=outmap.coordinate_frame)
     
+    
+    sol_p = axs.plot_coord(sol_coords, '.', color="lime",markersize=10,label='PFSS Footpoints')
+    # carr_p = axs.plot_coord(carr_coords, '.', color="red",markersize=0.3,label='PSP Carrington Coords')
+    q_p = axs.plot_coord(q_coords, 'v', color="blue",markersize=10,label='Quiescent Region Footpoints')
+    l_q_p = axs.plot_coord(long_q_coords, 'v', color="magenta",markersize=10,label='Long Quiescent Footpoints')
+    
+    # breakpoint()
+    
+    # # n = [58, 651, 393, 203, 123]
+    
+    if region_labels:
+        for i in range(len(carr_lat_max)):
+            # axs.annotate('memes', (carr_lat_max[i],carr_lon_max[i]))
+            # print(i+2)
+            # breakpoint()
+            if regions_arr[i,2] > 1800:
+            # if i == 7:
+                axs.text(carr_lon_min[i],carr_lat_max[i],str(i),color="black",fontsize=14,transform=axs.get_transform('world'))
+            # else:
+                # axs.text(carr_lon_min[i],carr_lat_max[i],str(i),color="black",fontsize=14,transform=axs.get_transform('world'))
+        
+        
+        
+        # print((carr_lat_max[i],carr_lon_max[i]))
+    # axs.annotate('PEPE', (0,180),transform=axs.get_transform('world'))
+    
+    # point_in_carrington = SkyCoord(lon=0*u.deg, lat=0*u.deg, frame=outmap.coordinate_frame)
+    # meme = axs.plot_coord(point_in_carrington, 'v', color="orange",markersize=5,label='Test')
+    
+    # breakpoint()
+    
+    # axs.text(0,0,'A point on the Sun',color="black",transform=axs.get_transform('world'))
+    
+    
+    # breakpoint()
     # img1 = plt.imread(outmap)
     # img1 = plt.imread(image)
-    axs.set_title('PSP Footpoints and Position on top of AIA '+str(wavelen)+'A Images for Encounter '+str(enc),fontsize=18)
-    axs.set_ylabel('Carrington Lattitude',fontsize=14)
-    axs.set_xlabel('Carrington Longitude',fontsize=14)
+    
+    if zoom:
+        axs.set_title('Zoomed Plot of Active Region',fontsize=80)
+        axs.set_ylim(ylims_pixel)
+        axs.set_xlim(xlims_pixel)
+    else:
+        axs.set_title('PSP Footpoint Estimations on '+instr+' '+str(wavelen)+'Å Images during Encounter '+str(enc),fontsize=52)
+        
+        # if plot_shape=='flat':
+        #     axs.set_ylim(ylims_pixel)
+        #     axs.set_xlim(xlims_pixel)
+    
+    # axs.set_ylabel('Carrington Lattitude',fontsize=14)
+    # axs.set_xlabel('Carrington Longitude',fontsize=14)
+    
+    # axs.set_ylabel("Helioprojective Lattitude (Solar-Y)",fontsize=22)
+    # axs.set_xlabel("Helioprojective Longitude (Solar-X)",fontsize=22)
+    
+    axs.set_ylabel("Helioprojective Lattitude (Solar-Y)",fontsize=60)
+    axs.set_xlabel("Helioprojective Longitude (Solar-X)",fontsize=60)
 
-    axs.tick_params(axis='both', which='major', labelsize=14)
-    # axs.tick_params(axis='both', which='minor', labelsize=12)
-    
-    
-    
-    # marker_size = 36
-    # def update_prop(handle, orig):
-    #     handle.update_from(orig)
-    #     handle.set_sizes([marker_size])
-    
-    # plt.legend(handler_map={type(sol_p): HandlerPathCollection(update_func=update_prop)})
-    
-    
-
-            # return [plt.Line2D([x], [y], marker=marker, color='black')]
+    # axs.tick_params(axis='both', which='major', labelsize=22)
+    axs.tick_params(axis='both', which='major', labelsize=60)
+    # axs.tick_params(axis='y', labelrotation=90)
     
     handles, labels = axs.get_legend_handles_labels()
     handler_map = {type(sol_p): MarkerSizeHandler() for sol_p in handles}
-    leg = axs.legend(handles, labels, handler_map=handler_map,fontsize=18)
+    leg = axs.legend(handles, labels, handler_map=handler_map,fontsize=40,loc='lower right')
     
-    leg.legendHandles[0].set_color('lime')
-    leg.legendHandles[1].set_color('red')
-    leg.legendHandles[2].set_color('blue')
+
+    leg.legend_handles[0].set_color('lime')
+    leg.legend_handles[1].set_color('blue')
+    leg.legend_handles[2].set_color('magenta')
+    # leg.legend_handles[3].set_color('magenta')
 
     plt.show()
     

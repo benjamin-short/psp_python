@@ -31,17 +31,29 @@ from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
+from findpeaks import findpeaks
+from scipy.interpolate import UnivariateSpline
 
-fields_user = os.environ['PSP_FIELDS_ID']
+import pandas as pd
+
+import matplotlib.colors
+import dateutil.parser
+# import matplotlib.pyplot as plt
+
+
+fields_id = os.environ['PSP_FIELDS_ID']
 fields_pass = os.environ['PSP_FIELDS_PW']
-sweap_user = os.environ['PSP_SWEAP_ID']
+
+sweap_id = os.environ['PSP_SWEAP_ID']
 sweap_pass = os.environ['PSP_SWEAP_PW']
 
+jsoc_email = os.environ['JSOC_EMAIL']
+
 Rs = 6.957e5 #solar radius in km
-Rs_in_m = Rs*10**3
+Rs_in_m = Rs*10**3 #solar radius in m
 w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
 
-def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thresh=0.95,bincount=499,full_run=False): # analysis chooses type of analysis you want to do, mode is broken, 
+def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thresh=0.95,bincount=499,full_run=True): # analysis chooses type of analysis you want to do, mode is broken, 
                                                                   # runs means number of runs to do the random analysis, 
                                                                   # enc_start specifies the encounter to start on.
         
@@ -62,7 +74,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
         
     enc_num = enc_start
     
-    hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/'
+    hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
     hpos = pyt.get_data('position')
     
@@ -307,10 +319,13 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
             
             if atype == 'rand' and runs > 1: #this should only be used for random bars.
                 
-            
-            
+                # pos_len = 50
+                # progress = np.linspace(0,pos_len,21)
+                range_check = np.arange(10)/10*runs
+                # i=0
                 q_z_lst = []
                 q_z_add = np.zeros(len(z_time))
+                # breakpoint()
                 for kk in range(len(wndw_list)):
                     # print(kk)
                     wnd_strs = wndw_list[kk][0:-1]
@@ -319,10 +334,10 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
                     # csv_arr = np.array([])
                     q_z_arr = np.array([])
                     
-                    range_check = np.arange(10)/10*runs
                     
-                    if jj in range_check:
-                        print(jj)
+                    
+                    if kk in range_check:
+                        print(str(100*kk/runs)+'% Complete')
                     
                     # breakpoint()
                     
@@ -375,6 +390,8 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
                         q_z_arr = np.append(q_z_arr,q_z_tmp_arr) #create array that gives a q/z fraction for every data point.
                         
                         q_z_arr = q_z_arr #this line ensures that q_z_arr maintains the correct shape through the np.append. Seems redundant, but it is not.
+                        
+                        
                         
                     # q_z_lst.append(q_z_arr)
                     q_z_add = q_z_add + q_z_arr
@@ -926,16 +943,33 @@ def quiescent_id_thresh(enc='all',kind='rand',thresh=0.5,split_num=6,mode='solop
                 # breakpoint()
                 np.savetxt(file,csv_arr,header='start dates,end dates,duration',delimiter=',',fmt='%s',comments='')
             
-def quiescent_prop_enc(enc='all'):
+def quiescent_prop_enc(enc='all', plot=True):
+    # if enc == 'all':
+    #     enc_arr = enc_flt[0:16]
+        
+        
     if enc == 'all':
-        enc_arr = enc_flt[0:12]
-    elif len(enc)!=1:
-        encs = [enc]
-        enc_arr = enc_flt[encs]
+        enc = list(range(1,18))
+        enc_arr = enc_flt[0:17]
+        
+        title_mod = 'for All Encounters'
+        
+    elif enc == 'no 13':
+        enc = list(range(2,13))
+        enc.extend(range(14,17))
+        # breakpoint()
+        enc_arr = [enc_flt[i-1] for i in enc]
+        # enc_arr = enc_flt[enc]
+        title_mod = 'for All Encounters, no 1 or 13'    
+    
+    elif type(enc)==int:
+        enci = enc
+        encs = [enci]
+        enc_arr = [enc_flt[enci]]
     else:
         enc_arr = [enc_flt[enc]]
     
-    hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/'
+    hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
     hpos = pyt.get_data('position')
     
@@ -943,6 +977,10 @@ def quiescent_prop_enc(enc='all'):
     hpos_data_arr = hpos[1]
     
     # enc_ind = (enc-1)
+    
+    radial_bins = [[11.4,15],[15,25],[25,35],[35,45],[45,55],[55,65]]
+    
+    numpy_arr = []
     
     for enc in enc_arr:
         enc_str = pys.time_string(enc[0])
@@ -967,8 +1005,63 @@ def quiescent_prop_enc(enc='all'):
         t0 = pys.time_string(time_select[0])
         tf = pys.time_string(time_select[-1])
         
-        quiescent_prop(t0=t0,tf=tf)
+        dfn = quiescent_prop(t0=t0,tf=tf)
         
+        numpy_arr.append(dfn)
+        
+    durations = []
+    event_num = 1
+    for i in numpy_arr:
+        for j in i:
+            durations.append(j[2])
+            event_num+=1
+            
+    data_time = np.nansum(durations)/3600 # units in hours
+    
+    print("Total Event Number: "+str(event_num))
+    print("Total Event Duration: "+str(data_time))
+    
+    
+    if plot:
+        
+        fig = plt.figure(figsize=(20,15))
+        data = np.array(durations)/3600 #units in hours
+        
+        q_mean = np.nanmean(data)
+        q_std = np.nanstd(data)
+        q_median = np.nanmedian(data)
+        q_quart = np.nanquantile(data,0.25)
+        
+        axs = fig.add_subplot(111)
+        
+        bins = np.linspace(0,4, 20)
+        hist, _ = np.histogram(data, bins=bins)
+        
+        error1 = np.sqrt(hist)
+
+        axs.bar(bins[:-1], hist, width=np.diff(bins), align='center', alpha=0.5, label='Quiescent Region Durations',edgecolor='black',color='tab:orange')
+        # axs.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[1],edgecolor='black')
+        axs.errorbar(bins[:-1], hist, yerr=error1, fmt='none', color='k', capsize=3)
+        # axs.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
+        axs.text(0.4,0.65,"Number of Quiescent Regions: "+str(event_num),fontsize=32,transform=axs.transAxes)
+        axs.text(0.4,0.55,"Quiescent Mean: "+str(round(q_mean,2))+' ± '+str(round(q_std,2)),fontsize=32,transform=axs.transAxes)
+        axs.text(0.4,0.45,"Quiescent Median: "+str(round(q_median,2))+' ± '+str(round(q_quart,2)),fontsize=32,transform=axs.transAxes)
+        
+        axs.vlines(q_mean,ymin=0,ymax=100,color='red',linestyle='dashed',label='Mean')
+        axs.vlines(q_median,ymin=0,ymax=100,color='cyan',linestyle='dashed',label='Median')
+                
+        axs.set_ylabel("Quiescent Region Counts",fontsize=30)
+        axs.set_xlabel("Durations in Hours",fontsize=30)
+        axs.set_title("Quiescent Region Duration Histogram",fontsize=30)
+        axs.set_ylim((0,100))
+        axs.tick_params(axis='both', which='major', labelsize=24)
+        
+        plt.legend(fontsize=20)
+        
+        plt.show()
+    
+    breakpoint()
+    
 def quiescent_prop(t0='2018-11-05',tf='2018-11-06'): #quiescent region properties
 
     i_day = pys.time_float(t0)
@@ -981,22 +1074,28 @@ def quiescent_prop(t0='2018-11-05',tf='2018-11-06'): #quiescent region propertie
         enci+=1
     
     csv_filename = 'enc_'+str(encounter)+'_regions_raw.csv'
-    csv_path='/Users/besh2109/Desktop/psp_regions/region_data/'
+    csv_path='/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
 
-    psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True)
-    mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+    # psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc',username=fields_id,password=fields_pass, level='l2',last_version=True)
+    # mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+    # breakpoint()
+    # if encounter in [1,12]:
 
-    if encounter in [1,12]:
-
-        psp.spc(trange=[t0,tf], level='L3')
-        vel_data = pyt.get_data('vp_fit_RTN')
+    #     psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
+    #     vel_data = pyt.get_data('psp_spc_vp_fit_RTN')
     
-    else:
-        psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00')
-        vel_data = pyt.get_data('VEL_RTN_SUN')
+    # else:
+    #     psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
+    #     vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
     
-    psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True)
-    pos_data = pyt.get_data('position') #retrieve PSP position data from tplot variable
+    # psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True)
+    # pos_data = pyt.get_data('position') #retrieve PSP position data from tplot variable
+    
+    df = pd.read_csv(csv_path+csv_filename)
+    dfn = df.to_numpy()
+    
+    return dfn
+    # breakpoint()
     
 def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z, as well as other parameters.
 
@@ -1055,10 +1154,10 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     mag_isfile = os.path.isfile(mag_file_path+mag_file_name)     
     mag_infile = mag_file_path+mag_file_name
     
-    psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True,\
-               username=fields_user,password=fields_pass)
+
+    psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True,username=fields_id,password=fields_pass)
     # psp.fields(trange=[t0,tf], datatype='mag_RTN', level='l2',last_version=True)
-    
+
 
     
     
@@ -1071,22 +1170,18 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     spc_file_name = pys.time_string(i_day,fmt='psp_swp_spc_l3i_%Y%m%d_v01.cdf')
     spc_isfile = os.path.isfile(spc_file_path+spc_file_name)  
     spc_infile = spc_file_path+spc_file_name
-    
 
     
     if encounter in [1]:
 
-        psp.spc(trange=[t0,tf], level='L3',\
-                   username=sweap_user,password=sweap_pass)
-        vel_data = pyt.get_data('vp_fit_RTN')
+        psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass)
+        vel_data = pyt.get_data('psp_spc_vp_fit_RTN')
     
     else:
-        psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',\
-                   username=sweap_user,password=sweap_pass)
-        vel_data = pyt.get_data('VEL_RTN_SUN')
+        psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass)
+        vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
     
-    psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True,\
-               username=fields_user,password=fields_pass)
+    psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True,username=fields_id,password=fields_pass)
     pos_data = pyt.get_data('position') #retrieve PSP position data from tplot variable
         
     mag_time_arr = mag_data[0]
@@ -1224,7 +1319,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
 def quiescent_calc_enc(enc_num,enc_radius=65,save=False):
     # enc_num = enc_start
     
-    hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/'
+    hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     #print(hpos_path)
     pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
     #print(pyt.tplot_names())
@@ -1301,18 +1396,63 @@ def quiescent_calc_enc(enc_num,enc_radius=65,save=False):
         
     return varis
        
-def quiescent_plot(t0='2018-11-04',tf='2018-11-05',title=None,save=False,other_comp=True,enc_save=False): #plots z and other parameters.
-    
-    t0_flt = pys.time_float(t0)
-    tf_flt = pys.time_float(tf)
+def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=None,save=False,other_comp=False,enc_save=False): #plots z and other parameters.
 
-    enci = 0
-    for enc in enc_flt:          
-        if (t0_flt>enc[0]) and (t0_flt<enc[1]): 
-            enc_num = enci+1 #determine which encounter today is in
-            # per_date = per_flt[enci]
-            # per_dist = per_dist_lst[enci]
-        enci+=1
+    if enc != None:
+        
+        enc_num = enc
+        
+        hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
+        #print(hpos_path)
+        pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+        #print(pyt.tplot_names())
+        hpos = pyt.get_data('position')
+        
+        hpos_time_arr = hpos[0]
+        hpos_data_arr = hpos[1]
+        
+        enc_ind = (enc_num-1)
+        
+        enc = enc_flt[enc_ind]
+        
+        enc_str = pys.time_string(enc[0])
+        enc_end = pys.time_string(enc[1])
+        
+        hpos_where = np.where((hpos_time_arr>enc[0])&(hpos_time_arr<enc[1]))
+        hpos_where = hpos_where[0]
+        
+        hpos_time = hpos_time_arr[hpos_where]
+        
+        hposx_data = hpos_data_arr[hpos_where,0]
+        hposy_data = hpos_data_arr[hpos_where,1]
+        hposz_data = hpos_data_arr[hpos_where,2]
+        
+        R = (np.sqrt(hposx_data**2+hposy_data**2+hposz_data**2)-Rs)/Rs
+        
+        R_where = np.where(R<enc_radius)
+        R_where = R_where[0]
+        
+        time_select = hpos_time[R_where]
+        t0p = pys.time_string(time_select[0],fmt='%Y%m%d_%H%M%S')
+        tfp = pys.time_string(time_select[-1],fmt='%Y%m%d_%H%M%S')
+        
+        t0 = pys.time_string(time_select[0])
+        tf = pys.time_string(time_select[-1])
+        
+        t0_flt = pys.time_float(t0)
+        tf_flt = pys.time_float(tf)
+
+    else:
+        t0_flt = pys.time_float(t0)
+        tf_flt = pys.time_float(tf)
+        
+        enci = 0
+        for enc_check in enc_flt:          
+            if (t0_flt>enc_check[0]) and (t0_flt<enc_check[1]): 
+                enc_num = enci+1 #determine which encounter today is in
+                # per_date = per_flt[enci]
+                # per_dist = per_dist_lst[enci]
+            enci+=1
 
     varis = quiescent_calc(t0=t0,tf=tf)
     
@@ -1351,6 +1491,21 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',title=None,save=False,other_c
     carr_where = np.where((carr_time>=t0_flt)&(carr_time<tf_flt))
     carr_time = carr_time[carr_where]
     carr_long = carr_long[carr_where]
+     
+    
+    z_t_string = pys.time_string(z_time)
+    
+    z_time_dates = pd.to_datetime(z_t_string)
+    z_time_dates = z_time_dates.to_numpy()
+    
+    # breakpoint()
+    
+    c_t_string = pys.time_string(carr_time)
+    
+    carr_time_dates = pd.to_datetime(c_t_string)
+    carr_time_dates = carr_time_dates.to_numpy()
+    
+    # carr_time_dates = [dateutil.parser.parse(t) for t in pys.time_string(carr_time)]    
     
     i_max = len(carr_time)
     wndw_bars = np.array(carr_time[0])
@@ -1378,61 +1533,180 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',title=None,save=False,other_c
     # wndw_bars = z_time[bins]
     
     #--------------#
+    
+    if tf==None:
+        tf = pys.time_string(pys.time_float(t0)+86400)
 
-    fis1 = plt.figure(figsize=(30,15))
+    # if enc != None:    
+    qregion_savename = 'enc_'+str(enc_num)+'_regions_raw.csv'
+    # else:
+        # qregion_savename = t0+'_'+tf+'_regions_raw.csv'
+        
+        # t0float = pys.time_float(t0)
+        # enci = 1
+        # for i in enc_flt:
+        #     if t0float>i[0] and t0float<i[1]:
+        #         enc_num = enci
+        #     enci+=1
+        # if tf==None:
+        #     tffloat = pys.time_float(t0)+86400
+        # else:
+        #     tffloat=pys.time_float(tf)
+
+    qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    
+    # breakpoint()
+
+    #---------------------------- Read in quiescent regions --------------------------------#
+
+    qregion_df = pd.read_csv(qregion_savepath+qregion_savename)
+    qregion_array = qregion_df.to_numpy()
+    
+    if enc != None:    
+        regions_arr = qregion_array
+        
+    else:
+        
+        pre_flt = qregion_array[:,:2]
+        
+        qregion_lst = []
+        for j in pre_flt:
+            qregion_lst.append(pys.time_float(j))
+            # print(j)
+        qregion_flt = np.array(qregion_lst) 
+        reg_where = np.where((qregion_flt[:,0]>t0_flt)&(qregion_flt[:,1]<tf_flt))
+        
+        regions_arr = qregion_array[reg_where,:]
+        regions_arr = regions_arr[0]
+
+    #---------------- find footpoints associated with quiescent regions --------------------#
+    
+    # breakpoint()
+    
+    region_time = np.array([])
+    region_Br = np.array([])
+    region_Bt = np.array([])
+    region_Bn = np.array([])
+    
+    region_z = np.array([])
+    
+    for k in regions_arr:
+        # breakpoint()
+        pre_flt = k[:2]
+        reg_flt = pys.time_float(pre_flt)
+        point_where = np.where((b_time>reg_flt[0])&(b_time<reg_flt[1]))
+        point_where = point_where[0]
+        
+        region_time_tmp = b_time[point_where]
+        region_Br_tmp =  Br[point_where]
+        region_Bt_tmp = Bt[point_where]
+        region_Bn_tmp = Bn[point_where]
+        region_z_tmp = z[point_where]
+
+        region_time = np.append(region_time,region_time_tmp)
+        region_Br = np.append(region_Br,region_Br_tmp)
+        region_Bt = np.append(region_Bt,region_Bt_tmp)
+        region_Bn = np.append(region_Bn,region_Bn_tmp)
+        region_z = np.append(region_z,region_z_tmp)
+        
+        # breakpoint()
+        
+        # if k[2] > 1800.0:
+            
+        #     long_region_time_tmp = b_time[point_where]
+        #     long_region_foot_lon_tmp =  sol_lon[point_where]
+        #     long_region_foot_lat_tmp = sol_lat[point_where]
+            
+        #     long_region_time = np.append(long_region_time,long_region_time_tmp)
+        #     long_region_foot_lon = np.append(long_region_foot_lon,long_region_foot_lon_tmp)
+        #     long_region_foot_lat = np.append(long_region_foot_lat,long_region_foot_lat_tmp)
+        
+    r_t_string = pys.time_string(region_time)
+    
+    region_time_dates = pd.to_datetime(r_t_string)
+    region_time_dates = region_time_dates.to_numpy()
+    
+    # breakpoint()
+    
+    #--------------#
+
+    fis1 = plt.figure(figsize=(30,18))
+    
+    time1 = [z_time_dates,z_time_dates]
+    time2 = [region_time_dates,region_time_dates]
+    
+    # time1 = [z_time,z_time]
+    # time2 = [region_time,region_time]
     
     data1 = [Br,z]
-    data2 = [quiet_B, quiet_z]
+    # data2 = [quiet_B, quiet_z]
+    data2 = [region_Br, region_z]
     
     label1 = ['Br','z']
-    label2 = ['Br (z<0.05)','z<0.05']
+    label2 = ['Br (Quiescent)','z (Quiescent)']
+    # label2 = ['Br (z<0.05)','z<0.05']
     
-    y_labs = ['B Field (nT)','z-parameter']
+    y_labs = ['Magnetic Field (nT)','z-parameter']
     
     for ii in range(2):
         
         axs = fis1.add_subplot(2,1,ii+1)
-        axs.plot(z_time,data1[ii], color='blue',linewidth=0.2,label=label1[ii],zorder=1)
-        axs.plot(z_time,data2[ii], color='orange',linewidth=0.22,label=label2[ii],zorder=2)
-        
+        # axs = fis1.add_subplot(1,1,ii+1)
+        axs.plot(time1[ii],data1[ii], color='tab:blue',linewidth=0.2,label=label1[ii],zorder=1)
+        axs.plot(time2[ii],data2[ii], color='tab:orange',linewidth=0.22,label=label2[ii],zorder=3)
+        axs.tick_params(axis='both', which='major', labelsize=22)
         if ii==0:
-            axs.plot(z_time,B_mag,color='black',linewidth=0.22,label='|B|',zorder=3)
-            axs.plot(carr_time,carr_long,color='purple',linewidth=1,label='Carrington Long',zorder=5)
+            axs.plot(z_time_dates,B_mag,color='black',linewidth=0.22,label='|B|',zorder=2)
+            axs.tick_params('x', labelbottom=False)
+            # axs.plot(carr_time,carr_long,color='purple',linewidth=1,label='Carrington Long',zorder=5)
             
             if other_comp:
-                axs.plot(z_time,Bt,color='red',linewidth=0.12,label='Bt',zorder=3)
-                axs.plot(z_time,Bn,color='green',linewidth=0.12,label='Bn',zorder=3)
+                axs.plot(z_time_dates,Bt,color='red',linewidth=0.12,label='Bt',zorder=3)
+                axs.plot(z_time_dates,Bn,color='green',linewidth=0.12,label='Bn',zorder=3)
             
+            
+            # breakpoint()
             if title==None:
-                axs.set_title(t0+' to '+tf)
+                if enc != None:
+                    axs.set_title('Encounter '+str(enc_num)+' Quiescent Regions',fontsize=30)
+                else:
+                    # axs.set_title(pys.time_string(z_time[0])[0:19]+' to '+pys.time_string(z_time[-1]+1)[0:19],fontsize=30)
+                    axs.set_title('Encounter '+str(enc_num)+' Quiescent Regions',fontsize=30)
             else:
-                axs.set_title(title)
+                axs.set_title(title,fontsize=36)
                 
             # axs.vlines(wndw_bars,-120,120, color='green',zorder=4,linewidth=0.5)
             # axs.set_ylim([16,17])
         
-        axs.set_xticks([z_time[0],z_time[round(len(z_time)/3)],\
-                       z_time[round(2*len(z_time)/3)],z_time[(len(z_time)-1)]])
+        # axs.set_xticks([z_time[0],z_time[round(len(z_time)/3)],\
+        #                z_time[round(2*len(z_time)/3)],z_time[(len(z_time)-1)]])
         
-        x_label_list = [pys.time_string(z_time[0],fmt='%Y-%m-%d/%H:%M:%S'),\
-                        pys.time_string(z_time[round(len(z_time)/3)],fmt='%Y-%m-%d/%H:%M:%S'), \
-                        pys.time_string(z_time[round(2*len(z_time)/3)],fmt='%Y-%m-%d/%H:%M:%S'), \
-                        pys.time_string(z_time[len(z_time)-1],fmt='%Y-%m-%d/%H:%M:%S')]
+        # x_label_list = [pys.time_string(z_time[0],fmt='%Y-%m-%d/%H:%M:%S'),\
+        #                 pys.time_string(z_time[round(len(z_time)/3)],fmt='%Y-%m-%d/%H:%M:%S'), \
+        #                 pys.time_string(z_time[round(2*len(z_time)/3)],fmt='%Y-%m-%d/%H:%M:%S'), \
+        #                 pys.time_string(z_time[len(z_time)-1],fmt='%Y-%m-%d/%H:%M:%S')]
+        
+        # x_label_list = [pys.time_string(z_time[0],fmt='%Y-%m-%d/%H:%M:%S'),\
+        #             pys.time_string(z_time[round(len(z_time)/3)],fmt='%Y-%m-%d/%H:%M:%S'), \
+        #             pys.time_string(z_time[round(2*len(z_time)/3)],fmt='%Y-%m-%d/%H:%M:%S'), \
+        #             pys.time_string(z_time[len(z_time)-1]+1,fmt='%Y-%m-%d')]
             
-        axs.set_xticklabels(x_label_list)
-        axs.set_ylabel(y_labs[ii],fontsize=18)
+            
+        # axs.set_xticklabels(x_label_list)
+        axs.set_ylabel(y_labs[ii],fontsize=28)
         
         if ii==1:
             axs.set_ylim([-0.1,1.1])
             
-        axs.set_xlim([z_time[0],z_time[(len(z_time)-1)]])
+        axs.set_xlim([z_time_dates[0],z_time_dates[(len(z_time_dates)-1)]])
         
-        leg = axs.legend(loc='upper right')
-        leg.legendHandles[0].set_linewidth(1.5)
-        leg.legendHandles[1].set_linewidth(1.5)
+        leg = axs.legend(loc='upper left', fontsize=20)
+        leg.legend_handles[0].set_linewidth(3)
+        leg.legend_handles[1].set_linewidth(3)
+
         if ii==0:
-            leg.legendHandles[2].set_linewidth(1.5) 
-            leg.legendHandles[3].set_linewidth(1.5) 
+            leg.legend_handles[2].set_linewidth(3) 
+            # leg.legend_handles[3].set_linewidth(1.5) 
     
     savepath_no_enc = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/z_plots/'
     
@@ -1456,6 +1730,10 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',title=None,save=False,other_c
     if isdir == False:
         os.makedirs(savepath)
     
+    plt.subplots_adjust(wspace=0, hspace=0)
+    
+    # breakpoint()
+    
     if save:    
         plt.savefig(savepath+savename,bbox_inches='tight')
     else:
@@ -1467,11 +1745,12 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',title=None,save=False,other_c
     plt.close(fis1)
     plt.close('all')
         
-def quiescent_enc_plot(other_comp=False):
+def quiescent_enc_plot(save=True,enc_save=True,other_comp=False):
     enc_num = 1
     
-    hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/'
+    hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     #print(hpos_path)
+    
     pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
     #print(pyt.tplot_names())
     hpos = pyt.get_data('position')
@@ -1479,7 +1758,7 @@ def quiescent_enc_plot(other_comp=False):
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
     
-    for enc in enc_flt[0:13]:
+    for enc in enc_flt[0:18]:
         enc_str = pys.time_string(enc[0])
         enc_end = pys.time_string(enc[1])
         
@@ -1509,7 +1788,7 @@ def quiescent_enc_plot(other_comp=False):
         if other_comp:
             title = title+' All Components'
         
-        quiescent_plot(t0=t0,tf=tf,title=title,save=True,enc_save=True,other_comp=other_comp)
+        quiescent_plot(t0=t0,tf=tf,title=title,save=save,enc_save=enc_save,other_comp=other_comp)
         
         enc_num+=1
         
@@ -1530,3 +1809,249 @@ def quiescent_vel(t0='2018-11-04',tf='2018-11-05'):
     plt.plot(spc_time,spc_dat[:,0])
     
     plt.show()
+    
+def SPAN_FOV(enc=1,enc_radius=45,plot=False, store=False):
+    # print('memes')
+    
+    #----------------------Choosing which Encounters to use-------------------#
+    
+    if enc == 'all':
+        enc_arr = list(range(1,17))
+        
+        title_mod = 'for All Encounters'
+        
+    elif enc == 'no 13':
+        enc_arr = list(range(2,13))
+        enc_arr.append(14)
+        enc_arr.append(15)
+        enc_arr.append(16)
+        title_mod = 'for All Encounters, no 1 or 13'
+        
+    elif enc == 'no 1':
+        enc_arr = list(range(2,15)) #shortcut to exlude encounter 1, we use SPC and it gets weird.
+        title_mod = 'for All Encounters, no 1'
+        
+    elif type(enc) is int:
+        enc_arr = [enc]
+        
+    else:
+        enc_arr = enc
+        
+    # breakpoint()
+        
+    for encs in enc_arr:
+        
+        enc_num = encs
+        
+        hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
+        #print(hpos_path)
+        pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+        #print(pyt.tplot_names())
+        hpos = pyt.get_data('position')
+        
+        hpos_time_arr = hpos[0]
+        hpos_data_arr = hpos[1]
+        
+        enc_ind = (enc_num-1)
+        
+        enc = enc_flt[enc_ind]
+        
+        enc_str = pys.time_string(enc[0])
+        enc_end = pys.time_string(enc[1])
+        
+        hpos_where = np.where((hpos_time_arr>enc[0])&(hpos_time_arr<enc[1]))
+        hpos_where = hpos_where[0]
+        
+        hpos_time = hpos_time_arr[hpos_where]
+        
+        hposx_data = hpos_data_arr[hpos_where,0]
+        hposy_data = hpos_data_arr[hpos_where,1]
+        hposz_data = hpos_data_arr[hpos_where,2]
+        
+        R = (np.sqrt(hposx_data**2+hposy_data**2+hposz_data**2)-Rs)/Rs
+        
+        R_where = np.where(R<enc_radius)
+        R_where = R_where[0]
+        
+        time_select = hpos_time[R_where]
+        t0p = pys.time_string(time_select[0],fmt='%Y%m%d_%H%M%S')
+        tfp = pys.time_string(time_select[-1],fmt='%Y%m%d_%H%M%S')
+        
+        t0 = pys.time_string(time_select[0])
+        tf = pys.time_string(time_select[-1])
+        
+        t0_flt = pys.time_float(t0)
+        tf_flt = pys.time_float(tf)
+
+        #specify time range in the form ['yyyy-mm-dd/hh:mm:ss','yyyy-mm-dd/hh:mm:ss']
+        trange=[t0,tf]
+        
+        #specify data type to plot
+        datatype='spi_sf00' #protons
+        spi_vars = psp.spi(trange=trange, datatype=datatype, level='L3', time_clip=True,username=sweap_id,password=sweap_pass,last_version=True)
+        
+        prefix='psp_spi_'
+        # pyt.tplot([prefix+'SUN_DIST',prefix+'EFLUX_VS_ENERGY',prefix+'EFLUX_VS_THETA',prefix+'EFLUX_VS_PHI'])
+    
+    
+        #define variables
+        eflux_phi_data=pyt.get_data(prefix+'EFLUX_VS_PHI')
+        times_unix=eflux_phi_data.times
+        eflux = eflux_phi_data.y
+        phi = eflux_phi_data.v
+        
+        rad_data = pyt.get_data('psp_spi_SUN_DIST')
+        rad = rad_data.y
+        rad = np.array(rad-Rs)/Rs
+        
+        # breakpoint()
+        
+        #determine phi angle with max eflux
+        max_phi_ind = np.argmax(eflux, axis=1)
+        max_phi = phi[0, max_phi_ind]
+        # print(max_phi)
+        
+        times = [dateutil.parser.parse(t) for t in pys.time_string(times_unix)]        
+        
+        if min(rad) < 35:
+            spline_r_35 = UnivariateSpline(times_unix, rad-35., s=0)
+            r1x_35, r2x_35 = spline_r_35.roots()
+        
+        root_times = [dateutil.parser.parse(t) for t in pys.time_string([r1x_35,r2x_35])]     
+        
+        #define fov array
+        tlen = times_unix.shape[0]
+        phi_fov=np.ones(tlen)
+        phi_av_fov = np.ones(tlen)
+        
+        #set threshold 163.125 degrees
+        phi_thresh = phi[0,1]
+        
+        i = 0
+        # Initialize an empty list to store moving averages
+        moving_averages = []
+        point_ratios = []
+
+        window_size = 515 #roughly 30 minute windows
+
+        # Loop through the array to consider
+        # every window of size 3
+        while i < len(max_phi):
+
+            # Store elements from i to i+window_size
+            # in list to get the current window
+            
+            if i < int(window_size/2):
+                window = max_phi[i : i + int(window_size/2)]
+                win_len = len(window)
+            elif (i+int(window_size/2)) > len(max_phi):
+                window = max_phi[i - int(window_size/2) : i]
+                win_len = len(window)
+            else:
+               window = max_phi[i - int(window_size/2) : i + int(window_size/2)]
+               win_len = window_size
+
+            # Calculate the average of current window
+            window_average = round(sum(window) / win_len, 2)
+
+            # Store the average of current
+            # window in moving average list
+            moving_averages.append(window_average)
+            
+            # Check ratio of good points to bad points in window
+            
+            good = np.where(window<phi_thresh)
+            good = good[0]
+            
+            bad = np.where(window>=phi_thresh)
+            bad = bad[0]
+            
+            if len(bad) != 0:
+                
+                if len(good)/len(bad)>300.:
+                    good_bad_ratio = 300.
+                
+                else:    
+                    good_bad_ratio = len(good)/len(bad)
+            
+            else:
+                good_bad_ratio = 300.
+                
+            point_ratios.append(good_bad_ratio)
+
+            # Shift window to right by one position
+            i += 1
+        
+        moving_avs = np.array(moving_averages)
+        
+        point_ratios = np.array(point_ratios)
+        
+        exact_where = np.where(max_phi<phi_thresh)
+        exact_where = exact_where[0]
+        
+        phi_fov[exact_where] = 0
+        
+        av_where = np.where(moving_avs<155)
+        av_where = av_where[0]
+        
+        phi_av_fov[av_where] = 0
+
+        if plot:
+                
+            fig, ax = plt.subplots(figsize=(12, 5))
+        
+            #print(times.shape)
+            # start_tind = 66500
+            # stop_tind = 67000
+            if np.isnan(phi[0,0]):
+                phi[0,0] = 174.375
+            # breakpoint()
+            p = ax.pcolormesh(times, phi[0,:], eflux.T, norm=matplotlib.colors.LogNorm())
+            plt.colorbar(p, ax=ax, label=f'$(cm^2 \\ s \\ sr \\ eV)^{-1}$')
+            # ax.plot(times, max_phi, 'k')
+            ax.plot(times, moving_avs, 'k')
+            
+            # ax.plot(times,phi_fov*160,'r+')
+            
+            ax.plot(times,phi_av_fov*120,'b+')
+            
+            ax.plot(times,(point_ratios*0.2)+100,'y')
+            
+            # ax.axvspan(root_times[0], root_times[1], facecolor='g', alpha=0.5)
+            
+            ax.set_title("Encounter "+str(enc_num)+" SPAN-Ion Phi-direction.")
+                    
+            ax.set(ylim=(100, 185), xlabel='Time', ylabel=f"$\\phi$ [deg]")
+            
+            plt.show()
+        
+        #------------------store quality flags-------------------#
+        
+        if store:
+        
+            tplot_savename = 'SPAN_ion_fov_flags'+'_enc_'+str(enc_num)+'.cdf'
+            tplot_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+    
+            tplot_time = times_unix
+            
+            tplot_phi_fov = phi_fov
+            
+            tplot_phi_fov_av = phi_av_fov
+            
+            tplot_phi_ratio = point_ratios
+            
+            tplot_r_Rs = rad
+            
+            # breakpoint()
+            
+            pyt.store_data("phi_fov", data={'x':tplot_time, 'y':tplot_phi_fov})
+            pyt.store_data("phi_fov_average", data={'x':tplot_time, 'y':tplot_phi_fov_av})
+            pyt.store_data("phi_fov_ratio", data={'x':tplot_time, 'y':tplot_phi_ratio})
+            pyt.store_data("psp_radial_dist_Rs",data={'x':tplot_time,'y':tplot_r_Rs})
+    
+            cdf_var_list = ["phi_fov","phi_fov_average","phi_fov_ratio","psp_radial_dist_Rs"]
+            
+            pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
+            
+            
+            pyt.del_data()

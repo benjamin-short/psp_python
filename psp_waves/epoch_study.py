@@ -20,7 +20,7 @@ import cdflib
 from scipy.interpolate import interp1d as interp
 import time
 #from tkinter import *
-from lmfit.models import SkewedGaussianModel,GaussianModel
+# from lmfit.models import SkewedGaussianModel,GaussianModel
 from matplotlib.ticker import FormatStrFormatter
 
 from .config import CONFIG

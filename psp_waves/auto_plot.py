@@ -30,6 +30,12 @@ from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
+fields_id = os.environ['PSP_FIELDS_ID']
+fields_pass = os.environ['PSP_FIELDS_PW']
+
+sweap_id = os.environ['PSP_SWEAP_ID']
+sweap_pass = os.environ['PSP_SWEAP_PW']
+
 
 class MathTextSciFormatter(mticker.Formatter):
     def __init__(self, fmt="%1.0e"):
@@ -75,17 +81,17 @@ def auto_plot(fd="2018-10-03",fast=True):
         if fast:
             mag_data_type=mag_data_type+'_4_Sa_per_Cyc'
         
-        mag_in = psp.fields(trange=[t0,tf], datatype=mag_data_type, level='l2',last_version=True)    
-        acspec_in = psp.fields(trange=[t0,tf], datatype='dfb_ac_spec', level='l2')
-        dcspec_in = psp.fields(trange=[t0,tf], datatype='dfb_dc_spec', level='l2')
+        mag_in = psp.fields(trange=[t0,tf], datatype=mag_data_type, level='l2',last_version=True,username=fields_id,password=fields_pass)    
+        acspec_in = psp.fields(trange=[t0,tf], datatype='dfb_ac_spec', level='l2',username=fields_id,password=fields_pass)
+        dcspec_in = psp.fields(trange=[t0,tf], datatype='dfb_dc_spec', level='l2',username=fields_id,password=fields_pass)
         #burst = psp.fields(trange=[t0,tf], datatype='dfb_dbm_dvac', level='l2')
-        spc_in = psp.spc(trange=[t0, tf], datatype='l3i', level='l3')
+        spc_in = psp.spc(trange=[t0, tf], datatype='l3i', level='l3',username=sweap_id,password=sweap_pass)
         
         
         
         """ Historical Position Data """
         
-        hpos_path = CONFIG['local_data_dir']+'/data/sci/fields/l1/ephem_eclipj2000/full_mission/'
+        hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
         #print(hpos_path)
         pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
         #print(pyt.tplot_names())
@@ -140,7 +146,7 @@ def auto_plot(fd="2018-10-03",fast=True):
         carr_lat_data = pyt.get_data('carr_latitude')
         carr_lon_data = pyt.get_data('carr_longitude')
         
-        pos2_in = psp.fields(trange=[t0,tf], datatype='ephem_eclipj2000', level='l1') #going to be used to plot parker position
+        pos2_in = psp.fields(trange=[t0,tf], datatype='ephem_eclipj2000', level='l1',username=fields_id,password=fields_pass) #going to be used to plot parker position
         pos2_data = pyt.get_data('position')
         
         pos_data = pyt.get_data('sc_pos_HCI')
@@ -374,9 +380,9 @@ def auto_plot(fd="2018-10-03",fast=True):
                 axs1.plot(B_data_tmp[:,2],linewidth=linewidth,label='Bn')
     
                 leg = axs1.legend(loc='upper right')
-                leg.legendHandles[0].set_linewidth(1.0)
-                leg.legendHandles[1].set_linewidth(1.0)
-                leg.legendHandles[2].set_linewidth(1.0)
+                leg.legend_handles[0].set_linewidth(1.0)
+                leg.legend_handles[1].set_linewidth(1.0)
+                leg.legend_handles[2].set_linewidth(1.0)
                 
                 axs1.set_xlim(0, len(B_time_tmp))
                 axs1.set_ylabel('mag_rtn (nT)')
@@ -472,6 +478,7 @@ def auto_plot(fd="2018-10-03",fast=True):
                 axs5.plot(0,0, color='goldenrod', marker='o')
                 axs5.set_facecolor('xkcd:navy')
                 po = axs5.plot(pos2_data_tmp[:,0]/Rs,pos2_data_tmp[:,1]/Rs, marker='^', color='xkcd:blood orange')        
+                # breakpoint()
                 psp_r = str(np.sqrt((pos2_data_tmp[0,0]/Rs)**2+(pos2_data_tmp[0,1]/Rs)**2)) #convert radial distance into a string
                 #psp_r = str(psp_r[0])
                 axs5.set_adjustable('box')
@@ -566,12 +573,25 @@ def auto_plot(fd="2018-10-03",fast=True):
                 
     
                 else:
+                    # lat_time_tmp = lat_time_arr[lat_where]
+                    # lat_data_tmp = lat_data_arr[lat_where]
+                    
+                    # lon_time_tmp = lon_time_arr[lon_where]
+                    # lon_data_tmp = lon_data_arr[lon_where]
+                    
+                    # pos_time_tmp = pos_time_arr[pos_where]
+                    # pos_data_tmp = pos_data_arr[pos_where,:]
                     
                     impath = '/Users/besh2109/spedas_data/stereo/secchi/nodata/nodata.jpg'
                     srce_lat = np.array([0])
+                    # srce_lat = lat_data_tmp
+                    
                     srce_lon = np.array([180])
+                    # srce_lon = lon_data_tmp
+                    
                     img1 = plt.imread(impath)
                     axs4 = fig.add_subplot(gs[3,0], projection=ccrs.Orthographic(srce_lon[0], srce_lat[0]))
+                    # axs4 = fig.add_subplot(gs[3,0], projection=ccrs.Orthographic(srce_lon, srce_lat))
                     axs4.gridlines(color='black', linestyle='dotted')
                     axs4.imshow(img1, origin="upper", extent=(0, 360, -90, 90),transform=ccrs.PlateCarree())
                     axs4.title.set_text('No particle data to calculate Parker Spiral.')

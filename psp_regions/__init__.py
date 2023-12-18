@@ -15,6 +15,7 @@ from .quiescent_id import quiescent_enc_plot
 from .quiescent_id import quiescent_vel
 from .quiescent_id import quiescent_prop
 from .quiescent_id import quiescent_prop_enc
+from .quiescent_id import SPAN_FOV
 from .quiescent_map import quiescent_map
 from .quiescent_map import quiescent_plots
 from .quiescent_map import hmi_ex
@@ -23,6 +24,12 @@ from .quiescent_map import q_test
 from .quiescent_map import footpoint_plot
 from .quiescent_analysis import t_r_plot
 from .quiescent_analysis import dura_r_plot
+from .quiescent_analysis import t_anis_beta
+from .quiescent_analysis import brazil
+from .quiescent_analysis import quiescent_histograms
+from .quiescent_analysis import brazil_analysis
+from .quiescent_analysis import delb_b
+from .quiescent_analysis import alf_hist
 from .davidtensor import david_rot_mat
 from .davidtensor import david_anis
 from .davidtensor import steven_anis
