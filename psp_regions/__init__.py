@@ -16,6 +16,8 @@ from .quiescent_id import quiescent_vel
 from .quiescent_id import quiescent_prop
 from .quiescent_id import quiescent_prop_enc
 from .quiescent_id import SPAN_FOV
+from .quiescent_id import SPAN_SPC_QTN
+from .quiescent_id import total_time_check
 from .quiescent_map import quiescent_map
 from .quiescent_map import quiescent_plots
 from .quiescent_map import hmi_ex
@@ -30,6 +32,9 @@ from .quiescent_analysis import quiescent_histograms
 from .quiescent_analysis import brazil_analysis
 from .quiescent_analysis import delb_b
 from .quiescent_analysis import alf_hist
+from .quiescent_analysis import quiescent_volume
+from .quiescent_analysis import quiescent_list
+from .quiescent_analysis import temperature_analysis
 from .davidtensor import david_rot_mat
 from .davidtensor import david_anis
 from .davidtensor import steven_anis

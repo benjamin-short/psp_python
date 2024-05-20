@@ -223,8 +223,12 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     z = pos_data_arr[:,2]
     
     spc_in = psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
+        # breakpoint()
     spc_data = pyt.get_data('psp_spc_vp_fit_RTN')
-
+    
+    if spc_data == None:
+        spc_data = pyt.get_data('spp_spc_vp_fit_RTN')
+        
     spc_time_arr = spc_data[0]
     spc_data_arr = spc_data[1]
     
@@ -233,11 +237,8 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     vr_spc = spc_data_arr[:,0]
     
     vel_in = psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-    # breakpoint()
-    try:
-        vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
-    except:
-        vel_data = pyt.get_data('VEL_RTN_SUN')
+
+    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
     
     vel_time_arr = vel_data[0]
     vel_data_arr = vel_data[1]
@@ -315,7 +316,6 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     tf_del = pys.time_string(non_nan_corrected_time[-1])
    
     #--------------------------PFSS MODEL START-----------------------------#
-    
 
     gong_fname = pys.gong.synomap(trange=[t0_del,tf_del])
     
