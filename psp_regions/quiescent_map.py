@@ -38,6 +38,13 @@ from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
+from .mag2pfss import extract_br
+from .mag2pfss import adapt2pfss
+from .mag2pfss import gong2pfss
+from .mag2pfss import derosa2pfss
+from .mag2pfss import hmi2pfss
+from .mag2pfss import plot_output
+
 import astropy.units as u
 import astropy.constants as const
 from astropy.coordinates import SkyCoord
@@ -51,12 +58,7 @@ from sunpy.coordinates.sun import carrington_rotation_number as crn
 import sunpy.data.sample
 from sunpy.map.header_helper import make_heliographic_header
 
-
-import pfsspy
-import pfsspy.utils
-from pfsspy import coords, tracing
-from pfsspy.sample_data import get_gong_map
-
+from sunkit_magex import pfss
 
 import matplotlib.patches as mpatch
 
@@ -147,10 +149,12 @@ def q_test(enc=1):
     
     return enc_flt[1]
     
-def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,save_coords=False,rlim=55):
+def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,save_coords=False,rlim=55,source='hmi'):
     
     Rs_km = 6.957e5 #solar radius in km  
     Rs = Rs_km*10**3
+    
+    t0_dt = datetime.fromisoformat(t0)
     
     if enc is not None:
         # enc_num = enc-1
@@ -204,14 +208,14 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     if tf==None:
         tf = pys.time_string(pys.time_float(t0)+86400)
         
-        
+    tf_dt = datetime.fromisoformat(tf) 
+    
     def set_axes_lims(ax):
         ax.set_xlim(0, 360)
         ax.set_ylim(0, 180)
 
     #-------------------------------IMPORT DATA-------------------------------#
-    
-    # pos_in = psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True) #going to be used to plot parker position
+
     pos_in = psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
     pos_data = pyt.get_data('position')
     
@@ -314,9 +318,23 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     t0_del = pys.time_string(non_nan_corrected_time[0])
     tf_del = pys.time_string(non_nan_corrected_time[-1])
+    
+    t0_del_dt = datetime.fromisoformat(t0_del) 
    
+    breakpoint()
     #--------------------------PFSS MODEL START-----------------------------#
-
+    
+    if source=='hmi':
+        
+        pfss_out = hmi2pfss(dt=t0_del_dt)
+    if source=='gong':
+        
+        pfss_out = gong2pfss(dt=t0_del_dt)
+    if source=='adapt':
+        
+        pfss_out = adapt2pfss(dt=t0_del_dt)
+    
+    
     gong_fname = pys.gong.synomap(trange=[t0_del,tf_del])
     
     # tf0 = pys.time_string(pys.time_float(t0)+2*86400)
@@ -356,17 +374,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     gong_floats = pys.time_float(gong_dates)
     
-    # indices = group_elements(corrected_time,gong_floats)
     indices = group_elements(non_nan_corrected_time,gong_floats)
-    
-    # fig = plt.figure(figsize=(20,10))
-    
-    # ax = plt.subplot()
-    # ax.plot(non_nan_corrected_time)
-    # ax.plot(gong_floats)
-    # plt.show()
-    
-    # breakpoint()
     
     unique_indices, ind_count = np.unique(indices,return_counts=True)
     
@@ -394,17 +402,20 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         
         for ind in unique_indices:
             
+            # gong_fname = pfss.sample_data.get_gong_map()
+            # gong_map = sunpy.map.Map(gong_fname)
+            
             long_where = np.where(indices==ind)
             
             gong_map = sunpy.map.Map(gong_fname[ind])
-            # gong_map.meta['rsun'] = sunpy.sun.constants.radius.value/gong_map.meta['cdelt1']
+            gong_map.meta['rsun'] = sunpy.sun.constants.radius.value/gong_map.meta['cdelt1']
             # breakpoint()
-            pfss_in = pfsspy.Input(gong_map, nrho, rss)
+            pfss_in = pfss.Input(gong_map, nrho, rss)
             
-            pfss_out = pfsspy.pfss(pfss_in)
+            pfss_out = pfss.pfss(pfss_in)
             
     
-            tracer = tracing.FortranTracer()
+            tracer = pfss.tracing.FortranTracer()
             r = r_tmp * const.R_sun
             
             r2 = (r_tmp-0.2)*const.R_sun
@@ -435,9 +446,6 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
                     i_non_breaks.append(i)
 
                 i+=1
-
-    
-
 
     # breakpoint()
 
@@ -495,6 +503,8 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=F
     w = 360/(25.38*86400) # angular frequency of the sun in degrees/sec
     # w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
 
+    t0_dt = datetime.fromisoformat(t0)
+
     if tf==None:
         tf = pys.time_string(pys.time_float(t0)+86400)
 
@@ -505,7 +515,7 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=F
     else:
         fieldline_savename = t0+'_'+tf+'_field_lines.pkl'
     
-    
+    tf_dt = datetime.fromisoformat(tf) 
 
 
     field_lines = loadall(fieldline_savepath+fieldline_savename)
@@ -973,7 +983,7 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     
     date_form = pys.time_string(r0_Rs_time[rs_where],fmt='%Y-%m-%dT%H')
     
-    file_path = os.environ.get('SUNPY_DOWNLOADDIR')+'/AIA/'+str(wavelen)+'/'+t0d[:4]+'/'+t0d[5:7]+'/'+t0d[8:10]+'/'
+    file_path = os.environ.get('SUNPY_DATA_DIR')+'/AIA/'+str(wavelen)+'/'+t0d[:4]+'/'+t0d[5:7]+'/'+t0d[8:10]+'/'
     file_name = aia_lab+'.'+date_form[0]+'*Z'+'.'+str(wavelen)+'.image_lev1.fits'
     
     pattern = file_path+file_name
@@ -1127,7 +1137,8 @@ def hmi_ex(t0='2018-11-05',rss=2.5):
     # do the search, even if (in this case) it isn't used, as the synoptic maps are
     # labelled by Carrington rotation number instead of time
     time = a.Time(t0, t0)
-    series = a.jsoc.Series('hmi.synoptic_mr_polfil_720s')
+    series = a.jsoc.Series('hmi.synoptic_mr_720s')
+    # series = a.jsoc.Series('hmi.synoptic_mr_polfil_720s')
     
     crot_tmp = int(np.floor(crn(t=t0)))
     print(crot_tmp)
@@ -1141,12 +1152,19 @@ def hmi_ex(t0='2018-11-05',rss=2.5):
     # http://jsoc.stanford.edu/ajax/register_email.html
     result = Fido.search(time, series, crot, a.jsoc.Notify(jsoc_email))
     files = Fido.fetch(result)
-
+    
     ###############################################################################
     # Read in a file. This will read in the first file downloaded to a sunpy Map
     # object
     hmi_map = sunpy.map.Map(files[0])
     print('Data shape: ', hmi_map.data.shape)
+    
+    ###############################################################################
+    # Get rid of nans in maps, nans break the pfss input
+    # 
+    
+    nan_where = np.isnan(hmi_map.data)
+    hmi_map.data[nan_where] = np.nanmedian(hmi_map.data)
 
     ###############################################################################
     # Since this map is far to big to calculate a PFSS solution quickly, lets
@@ -1158,9 +1176,9 @@ def hmi_ex(t0='2018-11-05',rss=2.5):
     # Now calculate the PFSS solution
     nrho = 35
     rss = rss
-    pfss_in = pfsspy.Input(hmi_map, nrho, rss)
-    pfss_out = pfsspy.pfss(pfss_in)
-
+    pfss_in = pfss.Input(hmi_map, nrho, rss)
+    pfss_out = pfss.pfss(pfss_in)
+    breakpoint()
     ###############################################################################
     # Using the Output object we can plot the source surface field, and the
     # polarity inversion line.
@@ -1178,6 +1196,42 @@ def hmi_ex(t0='2018-11-05',rss=2.5):
     plt.colorbar()
     ax.set_title('Source surface magnetic field')
 
+    plt.show()
+    
+    ###############################################################################
+    # Finally, using the 3D magnetic field solution we can trace some field lines.
+    # In this case 64 points equally gridded in theta and phi are chosen and
+    # traced from the source surface outwards.
+    fig = plt.figure(figsize=(10,10))
+    ax = fig.add_subplot(111, projection='3d')
+    # ax.set_aspect("equal")
+
+    tracer = pfss.tracing.FortranTracer()
+    # tracer = tracing.PythonTracer()
+    r = 1.2 * const.R_sun
+    lat = np.linspace(-np.pi / 2, np.pi / 2,8, endpoint=False)
+    # lat = np.linspace(0, 0, 8, endpoint=False)
+    lon = np.linspace(0, 2 * np.pi, 8, endpoint=False)
+    lat, lon = np.meshgrid(lat, lon, indexing='ij')
+    
+
+    lat, lon = lat.ravel() * u.rad, lon.ravel() * u.rad
+
+    seeds = SkyCoord(lon, lat, r, frame=pfss_out.coordinate_frame)
+    # print('ey')
+    field_lines = tracer.trace(seeds, pfss_out)
+    # print('yey')
+    for field_line in field_lines:
+        color = {0: 'black', -1: 'tab:blue', 1: 'tab:red'}.get(field_line.polarity)
+        coords = field_line.coords
+        coords.representation_type = 'cartesian'
+        ax.plot(coords.x / const.R_sun,
+                coords.y / const.R_sun,
+                coords.z / const.R_sun,
+                color=color, linewidth=1)
+
+
+    ax.set_title('PFSS solution at '+str(rss)+' Rs')
     plt.show()
 
 def gong_ex(t0='2020-01-29',rss=2.5):
@@ -1202,7 +1256,7 @@ def gong_ex(t0='2020-01-29',rss=2.5):
     ###############################################################################
     # From the boundary condition, number of radial grid points, and source
     # surface, we now construct an Input object that stores this information
-    pfss_in = pfsspy.Input(gong_map, nrho, rss)
+    pfss_in = pfss.Input(gong_map, nrho, rss)
 
 
     def set_axes_lims(ax):
@@ -1222,7 +1276,7 @@ def gong_ex(t0='2020-01-29',rss=2.5):
 
     ###############################################################################
     # Now calculate the PFSS solution
-    pfss_out = pfsspy.pfss(pfss_in)
+    pfss_out = pfss.pfss(pfss_in)
 
     ###############################################################################
     # Using the Output object we can plot the source surface field, and the
@@ -1275,7 +1329,7 @@ def gong_ex(t0='2020-01-29',rss=2.5):
     ax = fig.add_subplot(111, projection='3d')
     # ax.set_aspect("equal")
 
-    tracer = tracing.FortranTracer()
+    tracer = pfss.tracing.FortranTracer()
     # tracer = tracing.PythonTracer()
     r = 1.2 * const.R_sun
     lat = np.linspace(-np.pi / 2, np.pi / 2,8, endpoint=False)

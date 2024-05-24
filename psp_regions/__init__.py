@@ -38,3 +38,9 @@ from .quiescent_analysis import temperature_analysis
 from .davidtensor import david_rot_mat
 from .davidtensor import david_anis
 from .davidtensor import steven_anis
+from .mag2pfss import extract_br
+from .mag2pfss import adapt2pfss
+from .mag2pfss import gong2pfss
+from .mag2pfss import derosa2pfss
+from .mag2pfss import hmi2pfss
+from .mag2pfss import plot_output

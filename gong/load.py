@@ -15,7 +15,8 @@ from pytplot import cdf_to_tplot
 from .config import CONFIG
 
 def load(trange=['2018-11-5', '2018-11-6'], 
-         instrument='gong', 
+         instrument='gong',
+         adapt_source='gong',
          datatype='magnetogram',
          suffix='', 
          get_support_data=False, 
@@ -40,12 +41,20 @@ def load(trange=['2018-11-5', '2018-11-6'],
         
         pathformat = '%Y%m/mrzqs%y%m%d/mrzqs%y%m%dt%H%Mc*.fits.gz'
         file = '/gong'
+        server = CONFIG['gong_data_dir']
         
+    if instrument == 'adapt':
+        
+        A = {"gong": 3, "hmi" : 4}.get(adapt_source)
+        pathformat = '%Y/adapt40{A}*%Y%m%d%H%M*.fts.gz'
+        file = '/adapt'
+        server= CONFIG['adapt_data_dir']
+        res = 2*3600
     out_files = []
     
     remote_names = dailynames(file_format=pathformat, trange=trange,res=res)
 
-    files = download(remote_file=remote_names, remote_path=CONFIG['public_data_dir'], local_path=CONFIG['local_data_dir'], no_download=no_update)
+    files = download(remote_file=remote_names, remote_path=server, local_path=CONFIG['local_data_dir']+file, no_download=no_update)
     if files is not None:
         for file in files:
             out_files.append(file)

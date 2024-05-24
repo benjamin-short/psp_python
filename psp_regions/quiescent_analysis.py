@@ -343,7 +343,10 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
             #     psp.spc(trange=[t0,tf], level='L3')
             #     vel_data = pyt.get_data('vp_fit_RTN')
             
+            breakpoint()
+            
             psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
+            psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
             # vel_data = pyt.get_data('VEL_RTN_SUN')
             
             if atype in ['panis','ptpar','ptper']:
