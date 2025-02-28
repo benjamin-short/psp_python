@@ -1136,11 +1136,11 @@ def quiescent_prop_enc(enc='all', plot=True):
         
         
     if enc == 'all':
-        # enc = list(range(1,18))
-        # enc_arr = enc_flt[0:17]
+        enc = list(range(1,19))
+        enc_arr = enc_flt[0:18]
         
-        enc = list(range(1,17))
-        enc_arr = enc_flt[0:16]
+        # enc = list(range(1,17))
+        # enc_arr = enc_flt[0:16]
         
         title_mod = 'for All Encounters'
         
@@ -1329,7 +1329,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     (like looping through all the Parker Solar Probe data)
     then the servers will seriously slow down how quickly I can pull data after a while. 
     
-    Here I'm pulling straight from the Berkeley servers so that shouldnt
+    Here I'm pulling straight from the secure servers so that shouldnt
     be an issue but its good practice to check whether you have the data already before unnecessarily making a
     a request of the server.
     
@@ -2769,45 +2769,6 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         # print('ey2')
 
         # breakpoint()
-        
-        #--------------------compare both SPAN and SPC to QTN density-------#
-        
-        
-        if qtn_data_exists:
-        
-            qtn_indices = assign_closest_index(spi_time,qtn_time)
-    
-            qtn_values_check = qtn_dens[qtn_indices]
-            
-            qtn_spc_diff = abs(qtn_values_check - spc_dens_down)
-            qtn_spi_diff = abs(qtn_values_check - spi_dens)
-            
-            spc_per_diff = qtn_spc_diff/qtn_values_check*100 #percent difference of both SPC and SPI
-            spi_per_diff = qtn_spi_diff/qtn_values_check*100
-            
-            # breakpoint()
-            
-            qtn_err_pers = qtn_errs[qtn_indices,:]/qtn_values_check[:,np.newaxis]*100
-            
-            one_sig_max = np.max(qtn_err_pers,axis=1)
-            two_sig_max = 2*np.max(qtn_err_pers,axis=1)
-            three_sig_max = 3*np.max(qtn_err_pers,axis=1)
-            
-            spi_one_sig_where = np.where(spi_per_diff<one_sig_max)
-            spi_one_sig_where = spi_one_sig_where[0]
-            spi_two_sig_where = np.where(spi_per_diff<two_sig_max)
-            spi_two_sig_where = spi_two_sig_where[0]
-            spi_three_sig_where = np.where(spi_per_diff<three_sig_max)
-            spi_three_sig_where = spi_three_sig_where[0]
-            
-            spc_one_sig_where = np.where(spc_per_diff<one_sig_max)
-            spc_one_sig_where = spc_one_sig_where[0]
-            spc_two_sig_where = np.where(spc_per_diff<two_sig_max)
-            spc_two_sig_where = spc_two_sig_where[0]
-            spc_three_sig_where = np.where(spc_per_diff<three_sig_max)
-            spc_three_sig_where = spc_three_sig_where[0]
-        
-        
         #------------------construct SPAN quality flag---------------------#
         
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(enc_num)+'.cdf'
@@ -2824,6 +2785,61 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         
         fov_flag_inv = np.array(fov_flag_av[fov_where],dtype=int)
         fov_flag = (1-fov_flag_inv)*2
+        
+        #--------------------compare both SPAN and SPC to QTN density-------#
+        
+        if qtn_data_exists:
+        
+            qtn_indices = assign_closest_index(spi_time,qtn_time)
+    
+            qtn_values_check = qtn_dens[qtn_indices]
+            
+            qtn_spc_diff = abs(qtn_values_check - spc_dens_down)
+            qtn_spi_diff = abs(qtn_values_check - spi_dens)
+            
+            spc_per_diff = qtn_spc_diff/qtn_values_check*100 #percent difference of both SPC and SPI
+            spi_per_diff = qtn_spi_diff/qtn_values_check*100
+            
+            # breakpoint()
+            
+            dens_cor_where = np.where(np.isin(spi_time,fov_av_time))
+            dens_cor_where = dens_cor_where[0]
+            
+            spi_per_diff_cor = spi_per_diff[dens_cor_where]
+            
+            
+            qtn_err_pers = qtn_errs[qtn_indices,:]/qtn_values_check[:,np.newaxis]*100
+            
+            qtn_err_pers_corr = qtn_err_pers[dens_cor_where,:]
+            
+            one_sig_max = np.max(qtn_err_pers,axis=1)
+            two_sig_max = 2*np.max(qtn_err_pers,axis=1)
+            three_sig_max = 3*np.max(qtn_err_pers,axis=1)
+            
+            one_sig_max_corr = np.max(qtn_err_pers_corr,axis=1)
+            two_sig_max_corr = 2*np.max(qtn_err_pers_corr,axis=1)
+            three_sig_max_corr = 3*np.max(qtn_err_pers_corr,axis=1)
+            
+            # spi_one_sig_where = np.where(spi_per_diff<one_sig_max)
+            # spi_one_sig_where = spi_one_sig_where[0]
+            # spi_two_sig_where = np.where(spi_per_diff<two_sig_max)
+            # spi_two_sig_where = spi_two_sig_where[0]
+            # spi_three_sig_where = np.where(spi_per_diff<three_sig_max)
+            # spi_three_sig_where = spi_three_sig_where[0]
+            
+            spi_one_sig_where = np.where(spi_per_diff_cor<one_sig_max_corr)
+            spi_one_sig_where = spi_one_sig_where[0]
+            spi_two_sig_where = np.where(spi_per_diff_cor<two_sig_max_corr)
+            spi_two_sig_where = spi_two_sig_where[0]
+            spi_three_sig_where = np.where(spi_per_diff_cor<three_sig_max_corr)
+            spi_three_sig_where = spi_three_sig_where[0]
+            
+            spc_one_sig_where = np.where(spc_per_diff<one_sig_max)
+            spc_one_sig_where = spc_one_sig_where[0]
+            spc_two_sig_where = np.where(spc_per_diff<two_sig_max)
+            spc_two_sig_where = spc_two_sig_where[0]
+            spc_three_sig_where = np.where(spc_per_diff<three_sig_max)
+            spc_three_sig_where = spc_three_sig_where[0]
         
         dens_cor_where = np.where(np.isin(spi_time,fov_av_time))
         dens_cor_where = dens_cor_where[0]
@@ -2939,7 +2955,7 @@ def total_time_check(enc_radius=65):
     
     check = []
     
-    for enc in enc_flt[0:16]:
+    for enc in enc_flt[0:18]:
         enc_str = pys.time_string(enc[0])
         enc_end = pys.time_string(enc[1])
         
@@ -2973,3 +2989,271 @@ def total_time_check(enc_radius=65):
     
     print(len(check))
     print(np.sum(check))
+    
+def convergence_test(t0,tf,bincount=499,runs=1000,z_thresh=0.95,q_thresh = 0.5):
+    
+    varis = quiescent_calc(t0=t0,tf=tf)
+
+    z_time = varis['z_time']
+    z = varis['z']
+    
+    qual_r_time = np.array(z_time)
+    # quiet_z = varis['quiet_z']
+    # b_time = varis['b_time']
+    # Br = varis['Br']
+    # quiet_B = varis['quiet_B']
+    # B_mag = varis['B_mag']
+    
+    # carr_time = varis['carr_time']
+    # carr_long = varis['carr_long']
+    # carr_lat = varis['carr_lat']
+    # carr_dif = varis['carr_dif']
+    
+    #--------------------interpolate over nans in z------------------------------#
+    
+    z_i = np.array(z)
+    
+    nans, x = nan_helper(z_i)
+    nan_group_indices = find_nan_groups_indices(z_i)
+    
+    long_arr = np.array([],dtype=int)
+    for bbeg in nan_group_indices:
+        if len(bbeg)>200:
+            long_arr = np.append(long_arr,bbeg)
+            
+    nans[long_arr] = False
+    
+    #interpolate over the nans that are very short
+    z_i[nans] = np.interp(x(nans), x(~nans), z_i[~nans])
+    
+    nanwhere = np.isnan(z_i)
+    
+    nanlst=[]
+    
+    for i in range(len(nanwhere)-1):
+        if nanwhere[i]==nanwhere[i+1]: 
+            nanlst.append(False)
+        else:
+            nanlst.append(True)
+    
+    if np.isnan(z_i[-1]):
+        nanlst.append(True)
+    else:
+        nanlst.append(False)
+    
+    nanlst_arr = np.array(nanlst)
+    
+    truewhere = np.where(nanlst_arr)
+    
+    bindices = truewhere[0] #bin indices, or BINdicess
+    
+    bin_lst = []
+    bin_time_lst = []
+    for i in range(int(len(bindices)/2)):
+        bin_lst.append([bindices[2*i],bindices[2*i+1]])
+        bin_time_lst.append([z_time[bindices[2*i]],z_time[bindices[2*i+1]]])
+
+    bindices = np.array(bin_lst)
+    
+    #----------------------- random analysis, set bars randomly --------------------------#
+
+
+
+                # wndw_bars = np.array([])
+    wndw_list = []
+    # breakpoint()
+    for jj in range(runs): #runs = number of random runs
+        i_max = len(z_time)
+        # wndw_bars_i = np.array(z_time[0])
+        
+        # csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/random_regions/'
+        # csv_savename = 'enc_'+str(enc_num)+'_quiescent_random.csv'
+        
+        bins = np.array([0])
+        bins = np.append(bins,random.sample(range(i_max),bincount))
+        bins = np.append(bins,np.array(i_max-1))
+        
+        for jjj in bindices:
+            bar_where = np.where((bins>=jjj[0])&(bins<=jjj[1]))
+            bar_where = bar_where[0]
+            
+            bins = np.delete(bins,bar_where)
+            bins = np.append(bins,jjj)
+        
+        bins = np.sort(bins) #sorts the indices in increasing order.
+        
+        wndw_list.append(list(z_time[bins]))
+        # wndw_bars_tmp = np.array(wndw_list)
+        
+        # wndw_bars = np.append(wndw_bars,z_time[bins], axis=0)
+        bin_store_r = z_time[bins]
+
+    # if atype == 'rand' and runs > 1: #this should only be used for random bars.
+        
+    # pos_len = 50
+    # progress = np.linspace(0,pos_len,21)
+    range_check = np.arange(10)/10*runs
+    # i=0
+    q_z_lst = []
+    q_z_add = np.zeros(len(z_time))
+    
+    run_count_list = []
+    region_count_list = []
+    region_len_list = []
+    
+    # breakpoint()
+    for kk in range(len(wndw_list)):
+        # print(kk)
+        wnd_strs = wndw_list[kk][0:-1]
+        wnd_ends = wndw_list[kk][1:]
+        
+        # csv_arr = np.array([])
+        q_z_arr = np.array([])
+        
+        
+        
+        if kk in range_check:
+            print(str(100*kk/runs)+'% Complete')
+        
+        # breakpoint()
+        
+        for iii in range(len(wnd_strs)):
+            
+            if iii == len(wnd_strs)-1:
+                z_where = np.where((z_time>=wnd_strs[iii]) & (z_time<=wnd_ends[iii])) #the last bin includes the last data point
+            else:
+                z_where = np.where((z_time>=wnd_strs[iii]) & (z_time<wnd_ends[iii]))
+            
+            
+            
+            
+            start_date = pys.time_string(wnd_strs[iii])
+            end_date = pys.time_string(wnd_ends[iii])
+            
+            z_time_in_bin = z_time[z_where]
+            z_in_bin = z[z_where]
+            
+            q_z_where = np.where((z_in_bin<0.05) | (z_in_bin>0.95))
+            
+            q_z_pnts = len(q_z_where[0])
+            z_pnts = len(z_in_bin)
+            
+            vari = np.nanvar(z_in_bin)
+            std = np.nanstd(z_in_bin)
+            med_z = np.nanmedian(z_in_bin)
+            
+            med_z = med_z - 1/2
+            med_z = np.sqrt(med_z**2)
+            
+            
+            if z_pnts==0:
+                q_z_frac=np.nan
+            
+            else:
+                q_z_frac = q_z_pnts/z_pnts
+            
+            if q_z_frac < z_thresh:
+                # q_z_frac = q_z_frac*0.3 #suppress values with low q/z
+                q_z_frac = 0
+            else:
+                # q_z_frac = q_z_frac*2 #inflate values with high q/z
+                q_z_frac = 1
+            # q_z_tmp_arr = (np.ones(len(z_in_bin))*q_z_frac)/((vari+1)*(med_z+1))
+            # q_z_tmp_arr = np.ones(len(z_in_bin))*(q_z_frac)/((std+1)*(med_z+1))
+            
+            q_z_tmp_arr = np.ones(len(z_in_bin))*(q_z_frac)
+            
+            q_z_arr = np.append(q_z_arr,q_z_tmp_arr) #create array that gives a q/z fraction for every data point.
+            
+            q_z_arr = q_z_arr #this line ensures that q_z_arr maintains the correct shape through the np.append. Seems redundant, but it is not.
+            
+    
+        run_arr = np.linspace(1,runs,num=250,dtype=int)
+            
+        # q_z_lst.append(q_z_arr)
+        q_z_add = q_z_add + q_z_arr
+        # if kk == 0:
+        #     qual_r_one = q_z_arr
+            
+        # if kk == 4:
+        #     qual_r_five = q_z_add/5
+
+        qual_r_arr = q_z_add/(kk+1)
+        
+        
+    
+    #---------------- check quiescent region counts over threshold = 0.5 --------------------------#
+    
+        if kk+1 in run_arr:
+        
+            r_reg_check = (qual_r_arr>q_thresh)
+            
+            r_regions = np.zeros(r_reg_check.shape)*np.nan
+            i_ind = 1
+            for k in range(len(r_regions)):
+                
+                if r_reg_check[k]==True:
+                    r_regions[k] = i_ind
+                
+                if k!=0:
+                    if r_reg_check[k]==False and r_reg_check[k-1]==True:
+                        i_ind+=1
+                        
+            reg_where = np.where(r_reg_check)
+            reg_where=reg_where[0]
+            reg_len = len(reg_where)
+                        
+            run_count_list.append(kk+1)
+            region_count_list.append(i_ind)
+            region_len_list.append(reg_len)
+            
+            # breakpoint()
+            # start_dates = []
+            # end_dates = []
+            # durations = []
+            # for ii in range(int(np.nanmax(r_regions))):
+            #     isl_where = np.where(r_regions==(ii+1))
+            #     isl_where = isl_where[0]
+                
+            #     start_ind = isl_where[0]
+            #     end_ind = isl_where[-1]
+                
+            #     start_time_flt = qual_r_time[start_ind]
+            #     end_time_flt = qual_r_time[end_ind]
+                
+            #     duration = end_time_flt-start_time_flt
+                
+            #     start_date = pys.time_string(start_time_flt) 
+            #     end_date = pys.time_string(end_time_flt)
+                
+            #     if duration>=30: #cut out short events, probably flukes
+        
+            #         start_dates.append(start_date)
+            #         end_dates.append(end_date)
+            #         durations.append(duration)
+            
+            
+    #----------------------------- generate plots ---------------------------------#
+    
+    median_counts = np.median(region_len_list)
+    
+    fig = plt.figure(figsize=(10,5))
+    
+    axs = fig.add_subplot(111)
+    axs.set_title('Quiescent Plasma Data vs ID Algorithm Runs, '+t0+' to '+tf)
+    axs.plot(run_count_list,region_len_list,label='Quiescent Data',color='tab:blue')
+    axs.set_ylabel('Quiescent Region Data Counts')
+    axs.set_xlabel('ID Algorithm Run Count')
+    axs.axhline(median_counts,linestyle='dashed',linewidth=1.5,color='tab:orange', label='Median Quiescent Value')
+    axs.axvline(300,linestyle='dashed',linewidth=1.5,color='tab:red', label='Chosen Run Value')
+    
+    # axs.set_ylim(-3,5000)
+    
+    leg = plt.legend(loc='upper right',fontsize=14)
+    
+    for legobj in leg.legend_handles:
+        legobj.set_linewidth(2.0)
+    
+    plt.show()
+    
+    breakpoint()

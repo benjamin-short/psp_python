@@ -53,11 +53,17 @@ import pandas as pd
 
 import glob
 
+import matplotlib as mpl
+
 from lmfit.models import SkewedGaussianModel
 
 Rs = 6.957e5 #solar radius in km
 Rs_in_m = Rs*10**3
 w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
+
+mp = 1.67262192*(10**(-27)) # mass of proton in kg
+
+JtoeV = 6.242*(10**18) # one joule equals 6.242*10^18 eV
 
 Rs_to_AU = 0.00465047 # 1 Rs = 0.00465047 AU
 
@@ -244,7 +250,7 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
     #----------------------Choosing which Encounters to use-------------------#
     
     if enc == 'all':
-        enc = list(range(1,19))
+        enc = list(range(1,20))
         
     if enc == 'no 13':
         enc = list(range(1,13))
@@ -343,7 +349,7 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
             #     psp.spc(trange=[t0,tf], level='L3')
             #     vel_data = pyt.get_data('vp_fit_RTN')
             
-            breakpoint()
+            # breakpoint()
             
             psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
             psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
@@ -422,11 +428,146 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
                 # data_arr = anis_st
                 
             elif atype=='ptemp':
-                # breakpoint()
-                temp_data = pyt.get_data('psp_spi_TEMP')
+               
+                # temp_data = pyt.get_data('psp_spi_TEMP')
+                # 
+                # time_arr = temp_data[0]
+                # data_arr = temp_data[1]
                 
-                time_arr = temp_data[0]
-                data_arr = temp_data[1]
+                # breakpoint()
+                
+                
+                temp_data_spi = pyt.get_data('psp_spi_TEMP')
+                temp_time_arr_spi = temp_data_spi[0]
+                temp_data_arr_spi = temp_data_spi[1]
+
+                med_res = np.nanmedian(np.diff(temp_time_arr_spi))
+                
+                # breakpoint()
+                temp_data_spc = pyt.get_data('psp_spc_wp_fit')
+                
+                if temp_data_spc == None:
+                    temp_data_spc = pyt.get_data('spp_spc_wp_fit')
+                
+                temp_time_arr_spc = temp_data_spc[0]
+                temp_data_arr_spc = temp_data_spc[1]
+                
+                temp_spc_ev = (1/2)*(10**6)*JtoeV*mp*temp_data_arr_spc**2 # should return the temperature of the protons in eV
+                
+                # breakpoint()
+                
+                spc_temp_clean = sliding_median(temp_spc_ev,275) #about one minute long windows at max cadence
+# 
+                interpolating_func = interp1d(temp_time_arr_spc, spc_temp_clean, kind='linear', fill_value='extrapolate')
+            
+                # Create a new array of time values with fixed cadence
+                spc_time_down = np.arange(temp_time_arr_spc[0], temp_time_arr_spc[-1], med_res)
+            
+                # Interpolate arr_two to the new time values
+                spc_temp_down = interpolating_func(spc_time_down)
+                
+                #--------------------------------------------------------------------#
+                
+                span_check_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(i)+'.cdf'
+                span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+                
+                pyt.tplot_restore(span_check_savepath+span_check_savename)
+            
+                SPAN_QTN_flag = pyt.get_data('SPAN_qual_flag')
+                SPAN_flag_time = SPAN_QTN_flag[0]
+                SPAN_flag = SPAN_QTN_flag[1]
+                
+                # SPC_QTN_flag = pyt.get_data('SPC_qual_flag')
+                # SPC_flag_time = SPC_QTN_flag[0]
+                # SPC_flag = SPC_QTN_flag[1]
+                
+                flag_zero_group = group_zeros(SPAN_flag)
+                
+                bad_span_times = []
+                temp_time_construct = np.array([],dtype=float)
+                temp_data_construct = np.array([],dtype=float)
+                
+                # breakpoint()
+                bins = np.array([])
+                for i in range(len(flag_zero_group)):
+                    
+                    t0s = SPAN_flag_time[flag_zero_group[i][0]]
+                    tfs = SPAN_flag_time[flag_zero_group[i][1]]
+                    # edge_times.append((t0,tf))
+                    bins = np.append(bins,np.array([t0s,tfs]))
+                    # bad_span_times.append((t0s,tfs))
+                good_bad = 0 #loop through times when quality flag is good and when its bad. start with bad.
+                # bad = 0
+                for i in range(1,len(bins)):
+                    
+
+                    if i==1:
+                        t0i = 10
+                        tfi = bins[i]
+                    elif i==len(bins)-1:
+                        # tf0 = bins[i]
+                        tfi = np.inf  
+                    else:
+                        t0i = bins[i-1]
+                        tfi = bins[i]
+                        
+                    if good_bad == 0:
+                        
+                        spc_where = np.where((spc_time_down>t0i)&(spc_time_down<tfi))
+                        spc_where = spc_where[0]
+                        
+                        temp_time_construct = np.append(temp_time_construct,spc_time_down[spc_where])
+                        temp_data_construct = np.append(temp_data_construct,spc_temp_down[spc_where])
+                        
+                        good_bad = 1 #alternate between good and bad times. Should start with bad.
+                        # breakpoint()
+                    elif good_bad ==1:
+                        
+                        spi_where = np.where((temp_time_arr_spi>t0i)&(temp_time_arr_spi<tfi))
+                        spi_where = spi_where[0]
+                        
+                        temp_time_construct = np.append(temp_time_construct,temp_time_arr_spi[spi_where])
+                        temp_data_construct = np.append(temp_data_construct,temp_data_arr_spi[spi_where])
+                        
+                        good_bad = 0
+                
+                #find all the places where SPC has missing data and full back in with SPAN-I because we have no choice
+                nanwhere = np.where(np.isnan(temp_data_construct))
+                nanwhere = nanwhere[0]
+                nan_bool = 1-np.isnan(temp_data_construct)*1
+                
+                nan_groups = group_zeros(nan_bool)
+                nan_times = temp_time_construct[nan_groups]
+                
+                for i in range(len(nan_times)):
+                    nan_t0 = nan_times[i,0]
+                    nan_tf = nan_times[i,1]
+                    
+                    temp_where = np.where((temp_time_construct>nan_t0)&(temp_time_construct<nan_tf))
+                    temp_where = temp_where[0]
+
+                    spi_nan_where = np.where((temp_time_arr_spi>nan_t0)&(temp_time_arr_spi<nan_tf))
+                    spi_nan_where = spi_nan_where[0]
+                    
+                    spc_nan_where = np.where((spc_time_down>nan_t0)&(spc_time_down<nan_tf))
+                    spc_nan_where = spc_nan_where[0]
+                    
+                    temp_time_construct = np.delete(temp_time_construct,temp_where)
+                    temp_data_construct = np.delete(temp_data_construct,temp_where)
+                    
+                    temp_time_construct = np.append(temp_time_construct,temp_time_arr_spi[spi_nan_where])
+                    temp_data_construct = np.append(temp_data_construct,temp_data_arr_spi[spi_nan_where])
+                
+                sorted_indices = np.argsort(temp_time_construct)
+                
+                temp_time_construct = temp_time_construct[sorted_indices]
+                temp_data_construct = temp_data_construct[sorted_indices]
+                
+                # breakpoint()
+                # vel_r_data_construct[nanwhere] = spi_vr[nanwhere]
+                
+                time_arr = temp_time_construct
+                data_arr = temp_data_construct
                 
             else:
                 dens_data = pyt.get_data('psp_spi_DENS')
@@ -533,7 +674,7 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
                 
                 V_mag_spi = np.sqrt(spi_r_data**2+spi_t_data**2+spi_n_data**2)
                 
-                psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass)
+                psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass,last_version=True)
                 vel_data_spc = pyt.get_data('psp_spc_vp_fit_RTN')
                 vel_time_arr_spc = vel_data_spc[0]
                 vel_data_arr_spc = vel_data_spc[1]
@@ -567,9 +708,9 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
                 SPAN_flag_time = SPAN_QTN_flag[0]
                 SPAN_flag = SPAN_QTN_flag[1]
                 
-                SPC_QTN_flag = pyt.get_data('SPC_qual_flag')
-                SPC_flag_time = SPC_QTN_flag[0]
-                SPC_flag = SPC_QTN_flag[1]
+                # SPC_QTN_flag = pyt.get_data('SPC_qual_flag')
+                # SPC_flag_time = SPC_QTN_flag[0]
+                # SPC_flag = SPC_QTN_flag[1]
                 
                 flag_zero_group = group_zeros(SPAN_flag)
                 
@@ -778,27 +919,26 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
     breakpoint()
     
     #----------------------------save data vs r-----------------------------#
+    if atype=='ptemp':
+        savepath = '/Users/besh2109/Desktop/Temperature Products/Ions vs R v0/'
+        savename = 'psp_swp_T_vs_R.cdf'
+        
+        tplot_radial_full = Rfull
+        
+        tplot_span_temp_full = datafull
+        
+        tplot_radial_q = Rfull[where_ap]
+        
+        tplot_span_temp_q = datafull[where_ap]
     
-    savepath = '/Users/besh2109/Desktop/Temperature Products/Ions vs R v0/'
-    savename = 'psp_swp_T_vs_R.cdf'
+        pyt.store_data("SPAN_temp_full", data={'x':tplot_radial_full, 'y':tplot_span_temp_full})
+        pyt.store_data("SPAN_temp_q", data={'x':tplot_radial_q, 'y':tplot_span_temp_q})
     
-    tplot_radial_full = Rfull
-    
-    tplot_span_temp_full = datafull
-    
-    tplot_radial_q = Rfull[where_ap]
-    
-    tplot_span_temp_q = datafull[where_ap]
-
-    pyt.store_data("SPAN_temp_full", data={'x':tplot_radial_full, 'y':tplot_span_temp_full})
-    pyt.store_data("SPAN_temp_q", data={'x':tplot_radial_q, 'y':tplot_span_temp_q})
-
-    cdf_var_list = ["SPAN_temp_full","SPAN_temp_q"]
-    
-    pyt.tplot_save(cdf_var_list,savepath+savename) #saves the quality flags to a .cdf file
+        cdf_var_list = ["SPAN_temp_full","SPAN_temp_q"]
+        
+        pyt.tplot_save(cdf_var_list,savepath+savename) #saves the quality flags to a .cdf file
     
     #--------------------------------------#
-    
     
     fig = plt.figure(figsize=(20,9)) 
     axs = fig.add_subplot(111)
@@ -841,12 +981,12 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
     # axs.plot(ycenters,q3_arr,color='black',zorder=4,linewidth=0.75)
     
     o3 = axs.plot(ycenters,q1_arr,color='black',zorder=4,linewidth=1.25, label='1st & 3rd Quartiles')
-    o4 = axs.plot(ycenters,q2_arr,color='black',linestyle='dotted',zorder=4,linewidth=2,label='Velocity Median')
+    o4 = axs.plot(ycenters,q2_arr,color='black',linestyle='dotted',zorder=4,linewidth=3,label='Velocity Median') #median value
     axs.plot(ycenters,q3_arr,color='black',zorder=4,linewidth=1.25)
     
     adiabatic = 1500*ycenters**(-4/3) 
     
-    axs.plot(ycenters,adiabatic,color='red',linestyle='dashed',linewidth=2,zorder=5)
+    # axs.plot(ycenters,adiabatic,color='red',linestyle='dashed',linewidth=2,zorder=5)
     # axs.plot(ycenters,q4_arr,color='grey',zorder=4)
     
     #--------------histogram for quiescent regions----------------------#
@@ -879,11 +1019,11 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
         q4_arr = np.append(q4_arr,q4)
 
     # axs.fill_between(ycenters,q0_arr,q1_arr,color='tab:orange',alpha=0.5,zorder=4)
-    o2 = axs.fill_between(ycenters,q1_arr,q3_arr,color='tab:orange',label='Quiescent Velocity Span',alpha=0.85,zorder=4)
+    o2 = axs.fill_between(ycenters,q1_arr,q3_arr,color='tab:orange',label='Quiescent Velocity Span',alpha=0.60,zorder=4)
     # axs.fill_between(ycenters,q3_arr,q4_arr,color='tab:orange',alpha=0.5,zorder=3)
     # axs.plot(ycenters,q0_arr,color='grey',zorder=5)
     axs.plot(ycenters,q1_arr,color='black',zorder=5,linewidth=1.25)
-    axs.plot(ycenters,q2_arr,color='black',linestyle='dotted',zorder=5,linewidth=2)
+    axs.plot(ycenters,q2_arr,color='black',linestyle='dotted',zorder=5,linewidth=3) #median
     axs.plot(ycenters,q3_arr,color='black',zorder=5,linewidth=1.25)
     # axs.plot(ycenters,q4_arr,color='grey',zorder=5)
     
@@ -897,14 +1037,14 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
     # axs.set_title(title,fontsize=36)
     axs.set_title('$V_{sw}$ vs R for Encounters 1 through 18',fontsize=36)
     # axs.set_ylabel(part_title,fontsize=24)
-    # axs.set_ylabel('Solar Wind Bulk Velocity (km/s)',fontsize=24)
-    axs.set_ylabel('Solar Wind Proton Core Temperature (eV)',fontsize=24)
+    axs.set_ylabel('Solar Wind Bulk Velocity (km/s)',fontsize=24)
+    # axs.set_ylabel('Solar Wind Proton Core Temperature (eV)',fontsize=24)
     axs.set_xlabel('Radial Position of PSP ($R_{\odot}$)',fontsize=24)
     axs.tick_params(axis='both', which='major', labelsize=24)
     # if 'dens' not in atype:
     # axs.set_ylim(drange)
-    # axs.set_ylim(125,425)
-    axs.set_ylim(0,120)
+    axs.set_ylim(75,425)
+    # axs.set_ylim(0,120)
     # axs.set_xlim(15,55)
     axs.set_xlim(10,65)
     
@@ -929,7 +1069,7 @@ def t_anis_beta(enc='all',enc_radius=40):
     #----------------------Choosing which Encounters to use-------------------#
     
     if enc == 'all':
-        enc = list(range(1,17))
+        enc = list(range(1,19))
         
         title_mod = 'for All Encounters'
         
@@ -1092,6 +1232,8 @@ def t_anis_beta(enc='all',enc_radius=40):
         beta_par = []
         beta_perp = []
         alf_vel = []
+        t_perp = []
+        t_par = []
         # beta_tot = []
         for j in range(len(Bx)):
             rot_mat = david_rot_mat([Bx[j],By[j],Bz[j]])
@@ -1105,6 +1247,9 @@ def t_anis_beta(enc='all',enc_radius=40):
             T_perp_tmp = np.array(tens_fin[1,1]+tens_fin[2,2])/2
             T_par_tmp = np.array(tens_fin[0,0])
             T_anis = T_perp_tmp/T_par_tmp
+            
+            t_perp.append(T_perp_tmp)
+            t_par.append(T_par_tmp)
             
             # temp_J = temp_data_arr*eVtoJ
             temp_par_J = T_par_tmp*eVtoJ
@@ -1137,14 +1282,20 @@ def t_anis_beta(enc='all',enc_radius=40):
         beta_par = np.array(beta_par)
         beta_perp = np.array(beta_perp)
         alf_vel = np.array(alf_vel)
+        t_perp = np.array(t_perp)
+        t_par = np.array(t_par)
         
-        anis_save_path = '/Users/besh2109/Desktop/Temperature Products/Ions/'
+        # breakpoint()
+        
+        anis_save_path = '/Users/besh2109/Desktop/Temperature Products/Ions v1/'
         anis_save_name = 'enc_'+str(i)+'_ion_thermal_products.cdf'
 
         pyt.store_data("position_Rs",data={'x':anis_time, 'y':pos_data_arr})
 
         pyt.store_data("T_anisotropy_ben", data={'x':anis_time, 'y':anis_ben})
         pyt.store_data("T_anisotropy_steve", data={'x':anis_time, 'y':anis_steve})
+        pyt.store_data("T_perp", data={'x':anis_time, 'y':t_perp})
+        pyt.store_data("T_par", data={'x':anis_time, 'y':t_par})
         # pyt.tplot_save('T_anisotropy',anis_save_path+anis_save_name)
         
         pyt.store_data("beta_par", data={'x':anis_time, 'y':beta_par})
@@ -1155,7 +1306,7 @@ def t_anis_beta(enc='all',enc_radius=40):
         
         # pyt.store_data("psp_spi_VEL_RTN_SUN",data={'x':vel_time_arr,'y':vel_data_arr})
         
-        cdf_var_list = ["position_Rs","T_anisotropy_ben","T_anisotropy_steve","beta_par","beta_perp","alfven_vel","psp_spi_VEL_RTN_SUN"]
+        cdf_var_list = ["position_Rs","T_anisotropy_ben","T_anisotropy_steve","T_perp","T_par","beta_par","beta_perp","alfven_vel","psp_spi_VEL_RTN_SUN"]
         
         pyt.tplot_save(cdf_var_list,anis_save_path+anis_save_name) #saves the temperature anisotropy and plasma betas to a .cdf file
 
@@ -1171,7 +1322,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
     
     time.sleep(0.75)
 
-    fp = findpeaks()
+    # fp = findpeaks()
 
     mu = 4*np.pi*1e-7 #mu naught
     eVtoJ = 1.60218*1e-19 #eV to J
@@ -1205,7 +1356,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
     #----------------------Choosing which Encounters to use-------------------#
     
     if enc == 'all':
-        enc = list(range(1,17))
+        enc = list(range(1,19))
         
         title_mod = 'for All Encounters'
         
@@ -1282,6 +1433,10 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
     q_alfvenicity_full = np.array([])
     non_q_alfvenicity_full = np.array([])
     
+    t_perp_full = np.array([])
+    q_t_perp_full = np.array([])
+    non_q_t_perp_full = np.array([])
+    
     for i in enc:
         
         # print(i)
@@ -1307,11 +1462,13 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
         pos_time_arr = pos_data[0]
         pos_data_arr = pos_data[1]
         
-        
         anis_data = pyt.get_data('T_anisotropy_ben')
         anis_time_arr = anis_data[0]
         anis_data_arr = anis_data[1]
 
+        t_perp_data = pyt.get_data('T_perp')
+        t_perp_time_arr = t_perp_data[0]
+        t_perp_data_arr = t_perp_data[1]
         
         beta_par_data = pyt.get_data('beta_par')
         beta_par_time_arr = beta_par_data[0]
@@ -1342,6 +1499,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
         beta_par = beta_par_data_arr[pos_where]
         alfven = alfven_vel_arr[pos_where]
         vel_mag = V[pos_where]
+        t_perp = t_perp_data_arr[pos_where]
         
         icme_start = pys.time_float('2022-09-06/15:25')
         icme_end = pys.time_float('2022-09-07/12:25')
@@ -1359,6 +1517,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
             beta_par = beta_par[icme_where]
             alfven = alfven[icme_where]
             vel_mag = vel_mag[icme_where]
+            t_perp = t_perp[icme_where]
         
         
         
@@ -1370,6 +1529,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
         q_beta_par = np.array([],dtype=float)
         q_alfven = np.array([],dtype=float)
         q_alfvenicity = np.array([],dtype=float)
+        q_t_perp = np.array([],dtype=float)
         
         non_q_where = []
         for k in range(len(q_start_flt)):
@@ -1390,6 +1550,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
                 q_beta_par = np.append(q_beta_par,beta_par[q_where])
                 q_alfven = np.append(q_alfven,alfven[q_where])
                 q_alfvenicity = np.append(q_alfvenicity,alfvenicity[q_where])
+                q_t_perp = np.append(q_t_perp,t_perp[q_where])
         
         non_where = np.where(~np.in1d(anis_time, q_time))
         non_q_time = anis_time[non_where[0]]
@@ -1398,6 +1559,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
         non_q_beta_par = beta_par[non_where[0]]
         non_q_alfven = alfven[non_where[0]]
         non_q_alfvenicity = alfvenicity[non_where[0]]
+        non_q_t_perp = t_perp[non_where[0]]
         
         time_full = np.append(time_full,anis_time)
         q_time_full = np.append(q_time_full,q_time)
@@ -1422,6 +1584,10 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
         alfvenicity_full = np.append(alfvenicity_full,alfvenicity)
         q_alfvenicity_full = np.append(q_alfvenicity_full,q_alfvenicity)
         non_q_alfvenicity_full = np.append(non_q_alfvenicity_full,non_q_alfvenicity)
+        
+        t_perp_full = np.append(t_perp_full,t_perp)
+        q_t_perp_full = np.append(q_t_perp_full,q_t_perp)
+        non_q_t_perp_full = np.append(non_q_t_perp_full,non_q_t_perp)
         
         
         if plot in ['both','encs']:
@@ -1588,19 +1754,22 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
             ycenters = (yedge[:-1] + yedge[1:]) / 2
             
             #----------check where peak is-----------#
-
-            peaks = fp.fit(histo)
-            peak_array = np.array(peaks['persistence'])
-            main_peak = peak_array[0]
-            main_peak_x = main_peak[0] #x-coordinate of the main peak
-            main_peak_y = main_peak[1] #y-coordinate of the main peak
+            
+            # Finding the index of the maximum value in the flattened array
+            max_index_flat = np.argmax(histo)
+            
+            # Converting the flattened index into 2D indices
+            max_index_2d = np.unravel_index(max_index_flat, histo.shape)
+            
+            # main_peak = peak_array[0]
+            main_peak_y = max_index_2d[0] #y-coordinate of the main peak
+            main_peak_x = max_index_2d[1] #x-coordinate of the main peak
   
             main_peak_x_hist = histo[main_peak_y,:] #nets you the 1d histogram along the x axis at peak y-position
             main_peak_y_hist = histo[:,main_peak_x] #nets you the 1d histogram along the y axis at peak x-position
             
-            
             spline_x = UnivariateSpline(xcenters, main_peak_x_hist-np.max(main_peak_x_hist)/2, s=0) #find FWHM of x 
-            spline_y = UnivariateSpline(ycenters, main_peak_y_hist-np.max(main_peak_y_hist)/2, s=0) #   and y coordinates
+            spline_y = UnivariateSpline(ycenters, main_peak_y_hist-np.max(main_peak_y_hist)/2, s=0) #and y coordinates
             
             r1x, r2x = spline_x.roots()[:2]
             r1y, r2y = spline_y.roots()[:2]
@@ -1616,11 +1785,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
                 y_errs_non_q.append([r1y,r2y])
             
             #--------------------------------------#
-            
-            # breakpoint()
-            
-            
-    
+
             r_contour = axs.contour(xcenters,ycenters,histo, cmap=cmaps[ii], vmin=20, levels=10,zorder=2)
             # cb = fig.colorbar(r_contour)
             # fig1.colorbar(CS)
@@ -1736,6 +1901,9 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
             q_alfvenicity_rad_bins = q_alfvenicity_full[q_rad_where]
             non_q_alfvenicity_rad_bins = non_q_alfvenicity_full[non_q_rad_where]
             
+            q_t_perp_rad_bins = q_t_perp_full[q_rad_where]
+            non_q_t_perp_rad_bins = non_q_t_perp_full[non_q_rad_where]
+            
             y_datas = [q_anis_rad_bins,non_q_anis_rad_bins]
             x_datas = [q_beta_rad_bins,non_q_beta_rad_bins]
             c_datas = [q_alfvenicity_rad_bins,non_q_alfvenicity_rad_bins]
@@ -1752,7 +1920,11 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
 
             pyt.store_data("non_q_color_scale",data={'x':non_q_alfvenicity_rad_bins, 'y':non_q_alfvenicity_rad_bins}) #stores last random bin set
             
-            cdf_var_list = ["q_region_times","non_q_region_times","q_region_brazil","non_q_region_brazil","q_color_scale","non_q_color_scale"]
+            pyt.store_data("q_t_perp",data={'x':q_times_rad_bins, 'y':q_t_perp_rad_bins})
+            
+            pyt.store_data("non_q_t_perp",data={'x':non_q_times_rad_bins, 'y':non_q_t_perp_rad_bins})
+            
+            cdf_var_list = ["q_region_times","non_q_region_times","q_region_brazil","non_q_region_brazil","q_color_scale","non_q_color_scale","q_t_perp","non_q_t_perp"]
             
             pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename)
             
@@ -2017,7 +2189,8 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
     #----------------------Choosing which Encounters to use-------------------#
     
     if enc == 'all':
-        enc = list(range(1,17))
+        # enc = list(range(1,17))
+        enc = list(range(1,19))
         
         title_mod = 'for All Encounters'
         
@@ -2050,7 +2223,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
     # span_rad = []
     good_span_times = []
     
-    for pepe in range(1,17):
+    for pepe in range(1,19):
     
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
@@ -2163,8 +2336,8 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
     #         print()
     #         raise
     
-    dcheck = 'ion_thermal'
-    # dcheck = 'ion_bulk'
+    # dcheck = 'ion_thermal'
+    dcheck = 'ion_bulk'
 
     time_full = np.array([])
     q_time_full = np.array([])
@@ -2401,7 +2574,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
                         data_arr = np.sqrt(vr**2+vt**2+vn**2)
                     
                     # breakpoint()
-                    drange = (0,900)
+                    drange = (0,650)
                     n_bins = 40
                     file_mod = 'Ion_Bulk_Velocity'
                     # data_arr = vel_data_arr
@@ -2416,7 +2589,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
                 elif dtype[ii] == 'ion_temp':
                     time_arr = temp_time_arr
                     data_arr = temp_data_arr
-                    drange = (0,250)
+                    drange = (0,175)
                     n_bins = 40
                     file_mod = 'Ion_Core_Temperature'
                     
@@ -2630,7 +2803,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
     
     n_types = len(dtype)
     
-    # breakpoint()
+    breakpoint()
     
     # radial_bins = [[1,15],[15,35]]
     # fig = plt.figure(figsize=(10,25))
@@ -2641,7 +2814,8 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
     # r_labs_in = ['13.3','15','25','35']
     # r_labs_out = ['15','25','35','45']
     
-    r_labs_in = ['13.3','15','25','35','45','55','65']
+    # r_labs_in = ['13.3','15','25','35','45','55','65']
+    r_labs_in = ['11.4','15','25','35','45','55','65']
     r_labs_out = ['15','25','35','45','55','65','75']
     
     r_labs_in = r_labs_in[0:n_rads]
@@ -2788,16 +2962,18 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
                 # breakpoint()
                 
                 # if rad_bins[0] == 8:
+            
+                q_med = np.nanmedian(q_data_rad_bins)
+                non_q_med = np.nanmedian(non_q_data_rad_bins)
                     
                 print("Number of Quiescent Regions: "+str(q_range_num))
                 print('Radial Bin: '+str(rad_bins[0])+'-'+str(rad_bins[1]))
                 print('Quiescent Duration: '+str(np.sum(q_time_dif_rad_bins)/3600.))
                 print(d_label+' Q Average: '+str(round(q_mean,2))+' ± '+str(round(q_std,2)))
                 print(d_label+' Non-Q Average: '+str(round(non_q_mean,2))+' ± '+str(round(non_q_std,2)))
+                print(d_label+' Q Median: '+str(round(q_med,2)))
+                print(d_label+' Non-Q Median: '+str(round(non_q_med,2)))
                 print()
-                
-                q_med = np.nanmedian(q_data_rad_bins)
-                non_q_med = np.nanmedian(non_q_data_rad_bins)
                 
                 
                 # breakpoint()
@@ -2835,6 +3011,10 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
                 axs.errorbar(bins[:-1], hist1_norm, yerr=error1, fmt='none', color='k', capsize=3)
                 axs.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
                 
+                # axs.axvline(q_mean,color='tab:orange',linewidth=5,linestyle='dashed')
+                # axs.axvline(non_q_mean,color='tab:blue',linewidth=5,linestyle='dashed')
+                axs.axvline(q_med,color='tab:orange',linewidth=5,linestyle='dashed')
+                axs.axvline(non_q_med,color='tab:blue',linewidth=5,linestyle='dashed')
                 # axs.set_ylabel("Normalized Counts",fontsize=32)
                 # axs.set_xlabel(datatype,fontsize=32)
                 axs.tick_params(axis='x', which='major', labelsize=24)
@@ -3004,30 +3184,28 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
             # axs1.set_title('Inbound',fontsize=32)
             leg = axs1.legend(fontsize=20,loc='upper right',markerscale=5)
             
-            # axs2 = fig.add_subplot(2,1,2)
+            #---------------------#
+            
+            # fig = plt.figure(figsize=(20,15))
+            # axs1 = fig.add_subplot(1,1,1)
             
             # bins = np.linspace(drange[0],drange[1], n_bins)
-            # hist1, _ = np.histogram(out_datas[0], bins=bins)
-            # hist2, _ = np.histogram(out_datas[1], bins=bins)
+            # hist1, _ = np.histogram(q_t_perp_rad_bins, bins=bins)
+            # hist2, _ = np.histogram(non_q_t_perp_rad_bins, bins=bins)
             
             # hist1_norm = hist1 / np.sum(hist1)
             # hist2_norm = hist2 / np.sum(hist2)
             
-            # # Calculate error bars for each bin (normalized)
-            # error1 = np.sqrt(hist1) / np.sum(hist1)
-            # error2 = np.sqrt(hist2) / np.sum(hist2)
+            # axs1.bar(bins[:-1], hist1_norm, width=np.diff(bins), align='center', alpha=0.5,edgecolor='black')
+            # axs1.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5,edgecolor='black')
             
-            # # Plot histograms with error bars
-            # axs2.bar(bins[:-1], hist1_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[0],edgecolor='black')
-            # axs2.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[1],edgecolor='black')
-            # axs2.errorbar(bins[:-1], hist1_norm, yerr=error1, fmt='none', color='k', capsize=3)
-            # axs2.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
+            # axs1.set_ylabel("Normalized Counts",fontsize=32)
+            # axs1.tick_params(axis='both', which='major', labelsize=32)
             
-            # axs2.set_ylabel("Normalized Counts",fontsize=32)
-            # axs2.set_xlabel(datatype,fontsize=32)
-            # axs2.tick_params(axis='both', which='major', labelsize=32)
-            # axs2.text(bins[int(n_bins/4)],np.max(hist1_norm)-np.mean(hist1_norm),"Number of Quiescent Regions: "+str(q_range_num),fontsize=32)
-            # axs2.set_title('Outbound',fontsize=32)
+            # plt.show()
+            
+            #---------------------#
+            
             
             print('Inbound Mean: '+str(in_mean),'Outbound Mean: '+str(out_mean),'Total Mean: '+str(tot_mean))
             
@@ -3079,7 +3257,7 @@ def dura_r_plot(enc='all',enc_radius=67):
     #----------------------Choosing which Encounters to use-------------------#
     
     if enc == 'all':
-        enc = list(range(1,14))
+        enc = list(range(1,19))
         
     if enc == 'no 13':
         enc = list(range(1,13))
@@ -3190,16 +3368,16 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
 
     fp = findpeaks()
 
-    radial_bins = [[8,15],[15,25],[25,35],[35,45]]
-    # radial_bins = [[8,15],[15,25],[25,35]]
+    # radial_bins = [[8,15],[15,25],[25,35],[35,45]]
+    radial_bins = [[8,15],[15,25],[25,35]]
     # radial_bins = [[8,15],[15,20],[20,25],[25,30],[30,35]]
 
     n_rads = len(radial_bins)
-    r_labs_in = ['13.3','15','25','35']
-    r_labs_out = ['15','25','35','45']
+    # r_labs_in = ['13.3','15','25','35']
+    # r_labs_out = ['15','25','35','45']
     
-    # r_labs_in = ['13.3','15','25']
-    # r_labs_out = ['15','25','35']
+    r_labs_in = ['11.4','15','25']
+    r_labs_out = ['15','25','35']
     
     # r_labs_in = ['8','15','20','25','30']
     # r_labs_out = ['15','20','25','30','35']
@@ -3207,14 +3385,14 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
     r_labs_in.reverse()
     r_labs_out.reverse()
     
-    lab_pos = [0.21,0.4,0.6,0.78]
-    # lab_pos = [0.24,0.5,0.76]
+    # lab_pos = [0.21,0.4,0.6,0.78]
+    lab_pos = [0.24,0.5,0.76]
     title_pos= [0.32, 2*0.35]
     fig = plt.figure(figsize=(10,15))
     
     gs=gridspec.GridSpec(n_rads,3, width_ratios=[5,5,0.2])
     
-    # breakpoint()1
+    # breakpoint()
     
     #------------------cut out bad SPAN times------------------#
     
@@ -3225,7 +3403,7 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
     # span_rad = []
     good_span_times = []
     
-    for pepe in range(1,17):
+    for pepe in range(1,19):
     
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
@@ -3341,16 +3519,24 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
         non_q_color = pyt.get_data("non_q_color_scale")
         non_q_alfvenicity_rad_bins = non_q_color[0]
         
+        q_t_perp = pyt.get_data("q_t_perp")
+        q_t_perp_rad_bins = q_t_perp[1]
+        
+        non_q_t_perp = pyt.get_data("non_q_t_perp")
+        non_q_t_perp_rad_bins = non_q_t_perp[1]
+        
         
         if span_cut:
             
             q_anis_rad_bins_tmp = np.array([])
             q_beta_rad_bins_tmp = np.array([])
             q_alfvenicity_rad_bins_tmp = np.array([])
+            q_t_perp_rad_bins_tmp = np.array([])
             
             non_q_anis_rad_bins_tmp = np.array([])
             non_q_beta_rad_bins_tmp = np.array([])
             non_q_alfvenicity_rad_bins_tmp = np.array([])
+            non_q_t_perp_rad_bins_tmp = np.array([])
             
             for memes in good_span_times:
                 t0 = memes[0]
@@ -3367,21 +3553,27 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
                     q_anis_rad_bins_tmp = np.append(q_anis_rad_bins_tmp,q_anis_rad_bins[q_span_where])
                     q_beta_rad_bins_tmp = np.append(q_beta_rad_bins_tmp,q_beta_rad_bins[q_span_where])
                     q_alfvenicity_rad_bins_tmp = np.append(q_alfvenicity_rad_bins_tmp,q_alfvenicity_rad_bins[q_span_where])
+                    q_t_perp_rad_bins_tmp = np.append(q_t_perp_rad_bins_tmp,q_t_perp_rad_bins[q_span_where])
            
                 if len(non_q_span_where) != 0:
                     
                     non_q_anis_rad_bins_tmp = np.append(non_q_anis_rad_bins_tmp,non_q_anis_rad_bins[non_q_span_where])
                     non_q_beta_rad_bins_tmp = np.append(non_q_beta_rad_bins_tmp,non_q_beta_rad_bins[non_q_span_where])
                     non_q_alfvenicity_rad_bins_tmp = np.append(non_q_alfvenicity_rad_bins_tmp,non_q_alfvenicity_rad_bins[non_q_span_where])
+                    non_q_t_perp_rad_bins_tmp = np.append(non_q_t_perp_rad_bins_tmp,non_q_t_perp_rad_bins[non_q_span_where])
                 
             q_anis_rad_bins = q_anis_rad_bins_tmp
             q_beta_rad_bins = q_beta_rad_bins_tmp
             q_alfvenicity_rad_bins = q_alfvenicity_rad_bins_tmp
+            q_t_perp_rad_bins = q_t_perp_rad_bins_tmp
             
             non_q_anis_rad_bins = non_q_anis_rad_bins_tmp
             non_q_beta_rad_bins = non_q_beta_rad_bins_tmp
             non_q_alfvenicity_rad_bins = non_q_alfvenicity_rad_bins_tmp
+            non_q_t_perp_rad_bins = non_q_t_perp_rad_bins_tmp
         
+        
+        # breakpoint()
         
         y_datas = [q_anis_rad_bins,non_q_anis_rad_bins]
         x_datas = [q_beta_rad_bins,non_q_beta_rad_bins]
@@ -3428,32 +3620,50 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
             x_space = np.logspace(np.log10(0.0001), np.log10(30.0), bin_num)
             hist2d,xedge,yedge = np.histogram2d(x_datas[ii],y_datas[ii], bins=(x_space,y_space))
             
-            # hist2d,xedge,yedge = np.histogram2d(q_beta_par,q_anis_ben, bins=(x_space,y_space))
-            # hist2d,xedge,yedge = np.histogram2d(beta_par,anis_ben, bins=(x_space,y_space))
+            xcenters = (xedge[:-1] + xedge[1:]) / 2
+            ycenters = (yedge[:-1] + yedge[1:]) / 2
+
             # breakpoint()
             
             histo = np.transpose(hist2d)
             
             # breakpoint()
-            peaks = fp.fit(histo)
-            peak_array = np.array(peaks['persistence'])
-            main_peak = peak_array[0]
-            main_peak_x = main_peak[0] #x-coordinate of the main peak
-            main_peak_y = main_peak[1] #y-coordinate of the main peak
+            # peaks = fp.fit(histo)
+            # peak_array = np.array(peaks['persistence'])
+            
+            # Finding the index of the maximum value in the flattened array
+            max_index_flat = np.argmax(histo)
+            print(np.nanmax(histo))
+            # Converting the flattened index into 2D indices
+            max_index_2d = np.unravel_index(max_index_flat, histo.shape)
+            
+            # main_peak = peak_array[0]
+            main_peak_y = max_index_2d[0] #y-coordinate of the main peak
+            main_peak_x = max_index_2d[1] #x-coordinate of the main peak
   
             main_peak_x_hist = histo[main_peak_y,:] #nets you the 1d histogram along the x axis at peak y-position
             main_peak_y_hist = histo[:,main_peak_x] #nets you the 1d histogram along the y axis at peak x-position
             
-            # breakpoint()
-            
-            xcenters = (xedge[:-1] + xedge[1:]) / 2
-            ycenters = (yedge[:-1] + yedge[1:]) / 2
-            
             spline_x = UnivariateSpline(xcenters, main_peak_x_hist-np.max(main_peak_x_hist)/2, s=0) #find FWHM of x 
-            spline_y = UnivariateSpline(ycenters, main_peak_y_hist-np.max(main_peak_y_hist)/2, s=0) #   and y coordinates
+            spline_y = UnivariateSpline(ycenters, main_peak_y_hist-np.max(main_peak_y_hist)/2, s=0) #and y coordinates
             
             r1x, r2x = spline_x.roots()[:2]
             r1y, r2y = spline_y.roots()[:2]
+            
+            
+            # test plot
+            
+
+            # hist_x_test = np.array(histo)
+            # hist_x_test[main_peak_y,:]=np.nan
+            # # hist_x_test[:,main_peak_x]=np.nan
+
+            # # hist_y_test = np.array(histo)
+            # # hist_y_test[:,main_peak_x]=np.nan
+            
+            # plt.pcolormesh(xcenters,ycenters,hist_x_test)
+            # plt.xscale("log")
+            # plt.yscale("log")
             
             # breakpoint()
             
@@ -3468,16 +3678,33 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
                 y_errs_non_q.append([r1y,r2y])
     
             r_contour = axs.contour(xcenters,ycenters,histo, cmap=cmaps[ii], vmin=20, levels=6,zorder=2)
+            
+            # breakpoint()
+            
+            # norm= mpl.colors.Normalize(vmin=r_contour.cvalues.min(), vmax=r_contour.cvalues.max())
+            # # a previous version of this used
+            # #norm= matplotlib.colors.Normalize(vmin=cs.vmin, vmax=cs.vmax)
+            # # which does not work any more
+            # sm = plt.cm.ScalarMappable(norm=norm, cmap = r_contour.cmap)
+            # sm.set_array([])
+            # divider = make_axes_locatable(axs)
+            # cax = divider.append_axes('right', size='5%', pad=0.05)
+            # cb = fig.colorbar(sm,cax=cax)
+            # cb.set_label("Contour Counts",fontsize=20)
+            
             # cb = fig.colorbar(r_contour)
             # fig1.colorbar(CS)
     
             delete_contour(r_contour,1)
-            sct = axs.scatter(x_datas[ii],y_datas[ii],marker=',',c=c_datas[ii],s=1,zorder=1,cmap='rainbow',vmax=6)
+            # sct = axs.scatter(x_datas[ii],y_datas[ii],marker=',',c=c_datas[ii],s=1,zorder=1,cmap='rainbow',vmax=6)
+            sct = axs.scatter(x_datas[ii],y_datas[ii],marker=',',s=1,zorder=1)
             # axs.scatter(x_datas[ii],y_datas[ii],marker=',',color=colors[ii],s=1,zorder=1)
             
             axs.plot(inst_x,inst_anis_ion_cyc,linestyle='-',zorder=3,color='black',label='Ion Cyclotron Instability')
             axs.plot(inst_x,inst_anis_mirror,linestyle='-',zorder=4,color='blue',label='Mirror Instability')
             axs.plot(inst_x,inst_anis_par_firehose,linestyle='-',zorder=5,color='lime',label='Parallel Firehose')
+            
+            axs.text(0.19,0.10,'$N_{max}$ = '+str(int(np.nanmax(histo))),fontsize=18,zorder=6)
             # axs.plot(inst_x,inst_anis_obl_firehose,linestyle='-',zorder=6,color='firebrick',label='Oblique Firehose')
   
             # axs.axvline(x = 1, color = 'grey', linestyle = 'dashed', label = 'axvline - full height')
@@ -3529,14 +3756,31 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
         
         if j==1:
         
-            
+            # Enable LaTeX rendering
+            # plt.rc('text', usetex=True)
             cbar_ax = fig.add_axes([0.90, 0.15, 0.012, 0.7])
             # fig.colorbar(im, cax=cbar_ax)
         
             # ax3 = plt.subplot(gs[3*j+ii+1])
             
-            cb = fig.colorbar(sct,cax=cbar_ax)
-            cb.set_label("Alfvén Mach Number $V_{sw}/V_{Alf}$",fontsize=20)
+            # cb = fig.colorbar(sct,cax=cbar_ax)
+
+            
+            # cb = fig.colorbar(r_contour,cax=cbar_ax)
+            norm= mpl.colors.Normalize(vmin=0, vmax=1)
+            # a previous version of this used
+            #norm= matplotlib.colors.Normalize(vmin=cs.vmin, vmax=cs.vmax)
+            # which does not work any more
+            sm = plt.cm.ScalarMappable(norm=norm, cmap = r_contour.cmap)
+            sm.set_array([])
+            cb = fig.colorbar(sm,cax=cbar_ax)
+            # cb.set_label("Bin Counts$/N_{max}$",fontsize=20)
+            # breakpoint()
+            # cb.ax.get_yticklabels()[-1]='yeah boy'
+            # yticks = cb.ax.get_yticklabels()
+            # yticks[-1].set_text('$1 × N_{max}$')
+            # cb.ax.set_yticklabels(yticks)
+            cb.set_label("Normalized Bin Counts",fontsize=20)
             for t in cb.ax.get_yticklabels():
                   t.set_fontsize(20)
             
@@ -3544,12 +3788,15 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
     plt.subplots_adjust(wspace=0.02, hspace=0.01)
     leg = axs.legend(fontsize=16,loc='upper right',markerscale=5)
     
+    # plt.tight_layout()
     plt.show()
     
     plt.clf()
     plt.cla()
     plt.close('all')
     plt.close(fig)
+    
+    
     
     q = np.array(q_peaks)
     non_q = np.array(non_q_peaks)
@@ -3656,13 +3903,13 @@ def delb_b(enc='all',enc_radius=65,save=False):
     #----------------------Choosing which Encounters to use-------------------#
     
     if enc == 'all':
-        enc = list(range(1,15))
+        enc = list(range(1,19))
         
         title_mod = 'for All Encounters'
         
     elif enc == 'no 13':
         enc = list(range(1,13))
-        enc.extend(range(14,17))
+        enc.extend(range(14,19))
         title_mod = 'for All Encounters, no 1 or 13'
         
     elif enc == 'no 1':
@@ -3934,102 +4181,102 @@ def delb_b(enc='all',enc_radius=65,save=False):
     colors = ['tab:blue','tab:orange']
     
     
-    fig = plt.figure(figsize=(20,60))
+    # fig = plt.figure(figsize=(20,60))
     
-    q_rs_arr = np.array(q_rs)
-    nq_rs_arr = np.array(nq_rs)
+    # q_rs_arr = np.array(q_rs)
+    # nq_rs_arr = np.array(nq_rs)
     
-    q_dB_arr = np.array(q_dB_B)
-    nq_dB_arr = np.array(non_q_dB_B)
+    # q_dB_arr = np.array(q_dB_B)
+    # nq_dB_arr = np.array(non_q_dB_B)
     
-    for plot in range(n_rads):
+    # for plot in range(n_rads):
         
-        rad_bins = radial_bins[plot]
-        axs = fig.add_subplot(n_rads,1,plot+1)
+    #     rad_bins = radial_bins[plot]
+    #     axs = fig.add_subplot(n_rads,1,plot+1)
         
-        axs.set_title("δB/|B| Histograms",fontsize=38)
-        axs.set_ylabel('Counts',fontsize=38)
-        axs.set_xlabel('δB/|B|',fontsize=38)
+    #     axs.set_title("δB/|B| Histograms",fontsize=38)
+    #     axs.set_ylabel('Counts',fontsize=38)
+    #     axs.set_xlabel('δB/|B|',fontsize=38)
         
-        q_rad_where = np.where((q_rs_arr>rad_bins[0])&(q_rs_arr<rad_bins[1]))
-        q_rad_where = q_rad_where[0]
-        non_q_rad_where = np.where((nq_rs_arr>rad_bins[0])&(nq_rs_arr<rad_bins[1]))
-        non_q_rad_where = non_q_rad_where[0]
+    #     q_rad_where = np.where((q_rs_arr>rad_bins[0])&(q_rs_arr<rad_bins[1]))
+    #     q_rad_where = q_rad_where[0]
+    #     non_q_rad_where = np.where((nq_rs_arr>rad_bins[0])&(nq_rs_arr<rad_bins[1]))
+    #     non_q_rad_where = non_q_rad_where[0]
         
-        q_data = q_dB_arr[q_rad_where]
-        nq_data = nq_dB_arr[non_q_rad_where]
+    #     q_data = q_dB_arr[q_rad_where]
+    #     nq_data = nq_dB_arr[non_q_rad_where]
         
-        bins = np.linspace(0,0.8,30)
-        hist1, _ = np.histogram(nq_data, bins=bins)
-        hist2, _ = np.histogram(q_data, bins=bins)
+    #     bins = np.linspace(0,0.8,30)
+    #     hist1, _ = np.histogram(nq_data, bins=bins)
+    #     hist2, _ = np.histogram(q_data, bins=bins)
         
-        error1 = np.sqrt(hist1) 
-        error2 = np.sqrt(hist2) 
+    #     error1 = np.sqrt(hist1) 
+    #     error2 = np.sqrt(hist2) 
         
-        # Plot histograms with error bars
-        axs.bar(bins[:-1], hist1, width=np.diff(bins), align='center', alpha=0.5, label=labels[0],edgecolor='black')
-        axs.bar(bins[:-1], hist2, width=np.diff(bins), align='center', alpha=0.5, label=labels[1],edgecolor='black')
-        axs.errorbar(bins[:-1], hist1, yerr=error1, fmt='none', color='k', capsize=3)
-        axs.errorbar(bins[:-1], hist2, yerr=error2, fmt='none', color='k', capsize=3)
+    #     # Plot histograms with error bars
+    #     axs.bar(bins[:-1], hist1, width=np.diff(bins), align='center', alpha=0.5, label=labels[0],edgecolor='black')
+    #     axs.bar(bins[:-1], hist2, width=np.diff(bins), align='center', alpha=0.5, label=labels[1],edgecolor='black')
+    #     axs.errorbar(bins[:-1], hist1, yerr=error1, fmt='none', color='k', capsize=3)
+    #     axs.errorbar(bins[:-1], hist2, yerr=error2, fmt='none', color='k', capsize=3)
         
-        axs.tick_params(axis='both', which='major', labelsize=34)
-        leg = axs.legend(fontsize=30,loc='upper right',markerscale=5)
+    #     axs.tick_params(axis='both', which='major', labelsize=34)
+    #     leg = axs.legend(fontsize=30,loc='upper right',markerscale=5)
         
-    plt.show()
+    # plt.show()
         
         # print(q_rad_where.shape)
 
-    # fig = plt.figure(figsize=(30,15))
-    # # axs = fig.add_subplot(1,1,1)
-    # # print(j+k+1)
-    # # index = n_types*j+1+k
-    # # if k ==0:
-    # axs = fig.add_subplot(111)
-    # # axs = fig.add_subplot(n_rads,1,j+1)
-    # axs.set_title("δB/|B| Histograms",fontsize=38)
-    # axs.set_ylabel('Counts',fontsize=38)
-    # axs.set_xlabel('δB/|B|',fontsize=38)
+    fig = plt.figure(figsize=(30,15))
+    # axs = fig.add_subplot(1,1,1)
+    # print(j+k+1)
+    # index = n_types*j+1+k
+    # if k ==0:
+    axs = fig.add_subplot(111)
+    # axs = fig.add_subplot(n_rads,1,j+1)
+    axs.set_title("δB/|B| Histograms",fontsize=38)
+    axs.set_ylabel('Counts',fontsize=38)
+    axs.set_xlabel('δB/|B|',fontsize=38)
     
-    # bins = np.linspace(0,0.8,30)
-    # hist1, _ = np.histogram(x_datas[0], bins=bins)
-    # hist2, _ = np.histogram(x_datas[1], bins=bins)
+    bins = np.linspace(0,0.8,30)
+    hist1, _ = np.histogram(x_datas[0], bins=bins)
+    hist2, _ = np.histogram(x_datas[1], bins=bins)
     
-    # # hist1_norm = hist1 / np.sum(hist1)
-    # # hist2_norm = hist2 / np.sum(hist2)
+    # hist1_norm = hist1 / np.sum(hist1)
+    # hist2_norm = hist2 / np.sum(hist2)
     
-    # hist1_norm = hist1
-    # hist2_norm = hist2
+    hist1_norm = hist1
+    hist2_norm = hist2
     
-    # q_mean = np.nanmean(q_dB_B)
-    # q_std = np.nanstd(q_dB_B)
-    # q_median = np.nanmedian(q_dB_B)
-    # non_q_mean = np.nanmean(non_q_dB_B)
-    # non_q_std = np.nanstd(non_q_dB_B)
-    # non_q_median = np.nanmedian(non_q_dB_B)
+    q_mean = np.nanmean(q_dB_B)
+    q_std = np.nanstd(q_dB_B)
+    q_median = np.nanmedian(q_dB_B)
+    non_q_mean = np.nanmean(non_q_dB_B)
+    non_q_std = np.nanstd(non_q_dB_B)
+    non_q_median = np.nanmedian(non_q_dB_B)
 
     
-    # # Calculate error bars for each bin (normalized)
-    # # error1 = np.sqrt(hist1) / np.sum(hist1)
-    # # error2 = np.sqrt(hist2) / np.sum(hist2)
+    # Calculate error bars for each bin (normalized)
+    # error1 = np.sqrt(hist1) / np.sum(hist1)
+    # error2 = np.sqrt(hist2) / np.sum(hist2)
     
-    # error1 = np.sqrt(hist1) 
-    # error2 = np.sqrt(hist2) 
+    error1 = np.sqrt(hist1) 
+    error2 = np.sqrt(hist2) 
     
-    # # Plot histograms with error bars
-    # axs.bar(bins[:-1], hist1_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[0],edgecolor='black')
-    # axs.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[1],edgecolor='black')
-    # axs.errorbar(bins[:-1], hist1_norm, yerr=error1, fmt='none', color='k', capsize=3)
-    # axs.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
+    # Plot histograms with error bars
+    axs.bar(bins[:-1], hist1_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[0],edgecolor='black')
+    axs.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5, label=labels[1],edgecolor='black')
+    axs.errorbar(bins[:-1], hist1_norm, yerr=error1, fmt='none', color='k', capsize=3)
+    axs.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
     
-    # axs.tick_params(axis='both', which='major', labelsize=34)
-    # leg = axs.legend(fontsize=30,loc='upper right',markerscale=5)
+    axs.tick_params(axis='both', which='major', labelsize=34)
+    leg = axs.legend(fontsize=30,loc='upper right',markerscale=5)
     
-    # axs.text(0.4,75,'Quiescent Mean: '+str(round(q_mean,2))+' ± '+str(round(q_std,2)),fontsize=30)
-    # # axs.text(0.4,75,'Quiescent Median: '+str(round(q_median,3)),fontsize=22)
-    # axs.text(0.4,70,'Non-Quiescent Mean: '+str(round(non_q_mean,2))+' ± '+str(round(non_q_std,1)),fontsize=30)
-    # # axs.text(0.4,65,'Non-Quiescent Median: '+str(round(non_q_median,3)),fontsize=22)
+    axs.text(0.4,75,'Quiescent Mean: '+str(round(q_mean,2))+' ± '+str(round(q_std,2)),fontsize=30)
+    # axs.text(0.4,75,'Quiescent Median: '+str(round(q_median,3)),fontsize=22)
+    axs.text(0.4,70,'Non-Quiescent Mean: '+str(round(non_q_mean,1))+' ± '+str(round(non_q_std,1)),fontsize=30)
+    # axs.text(0.4,65,'Non-Quiescent Median: '+str(round(non_q_median,3)),fontsize=22)
     
-    # plt.show()
+    plt.show()
     
     breakpoint()
     
@@ -4482,6 +4729,8 @@ def quiescent_volume(enc='all',enc_radius=65):
         
         enc = list(range(1,19))
         enc_arr = enc_flt[0:18]
+        # enc = list(range(1,17))
+        # enc_arr = enc_flt[0:16]
         
         title_mod = 'for All Encounters'
         
@@ -4542,7 +4791,13 @@ def quiescent_volume(enc='all',enc_radius=65):
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
     
-    radial_bins = [[11.4,15],[15,25],[25,35],[35,45],[45,55],[55,65]]
+    # radial_bins = [[11.4,17.5],[17.5,30],[30,42.5],[42.5,55],[55,67.5]] #12.5 Rs bins
+    # radial_bins = [[11.4,15],[15,25],[25,35],[35,45],[45,55],[55,65]] # 10 Rs bins
+    # radial_bins = [[11.4,15],[15,20],[20,25],[25,30],[30,35],[35,40],[40,45],[45,50],[50,55],[55,60],[60,65]] # 5 Rs bins
+    radial_bins = [[11.4,12.5],[12.5,15],[15.0,17.5],[17.5,20.0], [20,22.5], [22.5,25.0], [25,27.5], [27.5,30.0], [30,32.5], [32.5,35.0], [35,37.5], # 2.5 Rs bins
+          [37.5,40.0], [40,42.5], [42.5,45.0], [45,47.5], [47.5,50.0], [50,52.5], [52.5,55.0], [55,57.5], [57.5,60.0], [60,62.5], [62.5,65.0]]
+
+
     
     pos_time_full = np.array([])
     pos_full = np.array([])
@@ -4668,7 +4923,7 @@ def quiescent_volume(enc='all',enc_radius=65):
         else:
             perc_list.append(q_sum/tot_sum)
     
-    # breakpoint()
+    breakpoint()
     #------------------------create plots and fit decay-----------------------#
     
     fig = plt.figure(figsize=(20,15))
@@ -4699,7 +4954,7 @@ def quiescent_volume(enc='all',enc_radius=65):
     # x_values = np.linspace(5,215)
     
     axs.plot(x_values, func(x_values, *popt), 'g--',
-         label='Exponential fit: $Ae^{-x/b}$, a=%5.1f, b=%5.1f $R_{\odot}$' % tuple(popt),linewidth=3)
+         label='Exponential fit: $Ae^{-x/b}$, A=%5.1f, b=%5.1f $R_{\odot}$' % tuple(popt),linewidth=3)
     
     # popt, pcov = curve_fit(func2, x_values, y_values)
     
@@ -4830,8 +5085,8 @@ def temperature_analysis():
     norm_histo_full = np.zeros(histo.shape)
     for ksj in range(len(histo)):
         
-        # bepo = np.nanmax(histo[ksj,:])
-        bepo = np.nansum(histo[ksj,:])
+        bepo = np.nanmax(histo[ksj,:])
+        # bepo = np.nansum(histo[ksj,:])
         # print(bepo)
         if bepo == 0:
             norm_histo_full[ksj,:] = histo[ksj,:]
@@ -4840,6 +5095,7 @@ def temperature_analysis():
         
         hist_x = ycenters_f #the x axis IN THIS CASE is the y axis of the original 2d histogram 
         hist_y = norm_histo_full[ksj,:]
+        # hist_y = histo[ksj,:]
 
         model = SkewedGaussianModel()
         
@@ -4855,10 +5111,12 @@ def temperature_analysis():
         # plt.plot(hist_x, result.best_fit,color='tab:red')
         # plt.show()
         
-        temp_fit_maxs.append(hist_x[np.argmax(result.best_fit)])
+        # temp_fit_maxs.append(hist_x[np.argmax(result.best_fit)])
+        temp_fit_maxs.append(hist_x[np.argmax(hist_y)])
         # breakpoint()
     temp_fit_arr = np.array(temp_fit_maxs)
     
+    # T_hist = np.array(histo)
     #--------------histogram for quiescent regions----------------------#
     
     # x_bins = np.logspace(np.log10(11.4),np.log10(enc_radius),25)
@@ -4888,29 +5146,36 @@ def temperature_analysis():
         hist_x = ycenters_q #the x axis IN THIS CASE is the y axis of the original 2d histogram 
         hist_y = norm_histo_q[ksj,:]
         
-        model = SkewedGaussianModel()
+        # model = SkewedGaussianModel()
         
-        # set initial parameter values
-        params = model.make_params(amplitude=10, center=20, sigma=20, gamma=5)
+        # # set initial parameter values
+        # params = model.make_params(amplitude=10, center=20, sigma=20, gamma=5)
         
-        # adjust parameters to best fit data.
-        result = model.fit(hist_y, params, x=hist_x)
+        # # adjust parameters to best fit data.
+        # result = model.fit(hist_y, params, x=hist_x)
         
-        # print(result.fit_report())
-        plt.plot(hist_x, hist_y, color='tab:blue')
-        # plt.plot(hist_x, result.init_fit)
-        plt.plot(hist_x, result.best_fit, color='tab:red')
-        plt.show()
+        # # print(result.fit_report())
+        # plt.plot(hist_x, hist_y, color='tab:blue')
+        # # plt.plot(hist_x, result.init_fit)
+        # plt.plot(hist_x, result.best_fit, color='tab:red')
+        # plt.show()
         
-        q_temp_fit_maxs.append(hist_x[np.argmax(result.best_fit)])
+        # q_temp_fit_maxs.append(hist_x[np.argmax(result.best_fit)])
+        # q_temp_x.append(xcenters_q[ksj])
+        
+        q_temp_fit_maxs.append(hist_x[np.argmax(hist_y)])
         q_temp_x.append(xcenters_q[ksj])
         
     q_temp_fit_arr = np.array(q_temp_fit_maxs)
     q_temp_x_arr = np.array(q_temp_x)
     
+    x_vals = np.linspace(1,64,num=64)
+    
     def Line(x,A,m):
         y = A*x**m
         return y
+    
+    #-----non-quiescent line fit-----#
 
     nq_parameters, covariance = curve_fit(Line,xcenters_f,temp_fit_arr)
     nq_A = nq_parameters[0]
@@ -4919,41 +5184,84 @@ def temperature_analysis():
     nq_A_err = np.sqrt(covariance[0,0])
     nq_m_err = np.sqrt(covariance[1,1])
 
-    nq_line = nq_A*xcenters_f**nq_m
+    # nq_line = nq_A*xcenters_f**nq_m
+    nq_line = nq_A*x_vals**nq_m
     
-    q_parameters, covariance = curve_fit(Line,xcenters_q[5:],q_temp_fit_arr[5:])
+    
+    nq_label = 'Non-quiescent fit, m='+str(round(nq_m,2))+'±'+str(round(nq_m_err,2))
+    
+    #-------quiescent line fit--------#
+
+    q_parameters, covariance = curve_fit(Line,xcenters_q,q_temp_fit_arr)
     q_A = q_parameters[0]
     q_m = q_parameters[1]
     
     q_A_err = np.sqrt(covariance[0,0])
     q_m_err = np.sqrt(covariance[1,1])
     
-    q_line = q_A*xcenters_q**q_m
+    # q_line = q_A*xcenters_q**q_m
+    q_line = q_A*x_vals**q_m
+    
+    #---------------#
+    
+    q_out_parameters, covariance = curve_fit(Line,xcenters_q[8:],q_temp_fit_arr[8:])
+    q_out_A = q_out_parameters[0]
+    q_out_m = q_out_parameters[1]
+    
+    q_out_A_err = np.sqrt(covariance[0,0])
+    q_out_m_err = np.sqrt(covariance[1,1])
+    
+    # q_out_line = q_out_A*xcenters_q**q_out_m
+    q_out_line = q_out_A*x_vals**q_out_m
+    
+    q_out_label = 'Quiescent outside fit, m='+str(round(q_out_m,2))+'±'+str(round(q_out_m_err,2))
+    
+    #---------------#
+    
+    q_in_parameters, covariance = curve_fit(Line,xcenters_q[:8],q_temp_fit_arr[:8])
+    q_in_A = q_in_parameters[0]
+    q_in_m = q_in_parameters[1]
+    
+    q_in_A_err = np.sqrt(covariance[0,0])
+    q_in_m_err = np.sqrt(covariance[1,1])
+    
+    
+    
+    # q_in_line = q_in_A*xcenters_q**q_in_m
+    q_in_line = q_in_A*x_vals**q_in_m
+    
+    q_in_label = 'Quiescent inside fit, m='+str(round(q_in_m,2))+'±'+str(round(q_in_m_err,2))
     
     #-------------------------------generate plot-----------------------------#
     
     
-    fig = plt.figure(figsize=(20,9)) 
+    fig = plt.figure(figsize=(20,11)) 
     axs = fig.add_subplot(111)
 
-    axs.pcolormesh(xcenters_f,ycenters_f,norm_histo_full.T,cmap='Greys')
+    axs.pcolormesh(xcenters_f,ycenters_f,norm_histo_full.T,cmap='Greys',alpha=0.45)
+    # axs.pcolormesh(xcenters_f,ycenters_f,T_hist.T,cmap='Greys',alpha=0.45)
     
-    # axs.plot(xcenters_f,temp_fit_arr, color='tab:blue',label='Non-quiescent temperature peaks',linewidth=2)
-    # axs.plot(xcenters_q,q_temp_fit_arr, color='tab:orange',label='Quiescent temperature peaks',linewidth=2)
+    axs.plot(xcenters_f,temp_fit_arr, color='tab:blue',label='Non-quiescent temperature peaks',linewidth=3,alpha=0.35)
+    axs.plot(xcenters_q,q_temp_fit_arr, color='tab:orange',label='Quiescent temperature peaks',linewidth=3,alpha=0.35)
     
     
-    axs.plot(xcenters_f,nq_line, color='tab:blue',label='Non-quiescent temperature fit, m='+str(round(nq_m,2))+
-                                                                                                   '±'+str(round(nq_m_err,2)),linewidth=2)
-    axs.plot(xcenters_q,q_line, color='tab:orange',label='Quiescent temperature fit, m='+str(round(q_m,2))+
-                                                                                                   '±'+str(round(q_m_err,2)),linewidth=2)
+    axs.plot(x_vals[12:],nq_line[12:], color='tab:blue',linestyle='dashed',label=nq_label,linewidth=3)
+    axs.plot(x_vals[12:27],q_in_line[12:27], color='tab:orange',linestyle=(5, (10, 3)),label=q_in_label,linewidth=3)
+    axs.plot(x_vals[27:-2],q_out_line[27:-2]-1, color='tab:orange',linestyle=(5, (10, 3)),label=q_out_label,linewidth=3)
     
-    axs.set_title('$T_{p}$ vs R for Encounters 1 through 18',fontsize=36)
+    axs.set_title('$T_{p}$ vs R for Encounters 1 through 19',fontsize=36)
     # axs.set_ylabel(part_title,fontsize=24)
     # axs.set_ylabel('Solar Wind Bulk Velocity (km/s)',fontsize=24)
     axs.set_ylabel('Solar Wind Proton Core Temperature (eV)',fontsize=24)
     axs.set_xlabel('Radial Position of PSP ($R_{\odot}$)',fontsize=24)
     axs.tick_params(axis='both', which='major', labelsize=24)
     axs.tick_params(axis='x', which='minor', labelsize=20)
+    
+    
+    scatterx = [x_vals[12],x_vals[26], x_vals[27], x_vals[-2]-1,x_vals[12],x_vals[-1]]
+    scattery = [q_in_line[12],q_in_line[26], q_out_line[27]-1, q_out_line[-2]-1,nq_line[12],nq_line[-1]]
+    
+    axs.scatter(scatterx,scattery,zorder=6,marker='|',s=900,color='black')
     # if 'dens' not in atype:
     # axs.set_ylim(drange)
     # axs.set_ylim(125,425)
@@ -4964,7 +5272,7 @@ def temperature_analysis():
     axs.set_xscale('log')
     
     
-    adiabatic = 1100*xcenters_f**(-4/3) 
+    adiabatic = 1300*xcenters_f**(-4/3)
     
     axs.plot(xcenters_f,adiabatic,color='red',linestyle='dashed',linewidth=2,zorder=5,label='Adiabatic Falloff m=-4/3')
     

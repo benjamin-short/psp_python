@@ -8,7 +8,7 @@ Created on Fri Sep 23 12:35:17 2022
 
 import os
 
-CONFIG = {'local_data_dir': 'sunpy/',
+CONFIG = {'local_data_dir': 'adapt_data/',
           'gong_data_dir': 'https://nispdata.nso.edu/ftp/oQR/zqs/',
           'adapt_data_dir': 'https://gong.nso.edu/adapt/maps/gong/',
           'hmi_data_dir': 'jsoc.stanford.edu/'
