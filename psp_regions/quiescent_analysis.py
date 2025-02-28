@@ -469,7 +469,7 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
                 #--------------------------------------------------------------------#
                 
                 span_check_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(i)+'.cdf'
-                span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+                span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
                 
                 pyt.tplot_restore(span_check_savepath+span_check_savename)
             
@@ -578,10 +578,10 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
         elif atype in etypes:
             # psp.spe(trange=[t0,tf],level='L3',datatype='spi_sf00')
             
-            temp_path = '/Users/besh2109/Desktop/psp_electrons/'
+            temp_path = '/Users/besh2109/Documents/psp_electrons/'
             temp_file = 'coret_e1toe8.tplot'
             
-            drift_path = '/Users/besh2109/Desktop/psp_electrons/'
+            drift_path = '/Users/besh2109/Documents/psp_electrons/'
             drift_file = 'coredrift_e1toe8.tplot'
             
             pyt.tplot_restore(temp_path+temp_file)
@@ -700,7 +700,7 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
                 #--------------------------------------------------------------------#
                 
                 span_check_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(i)+'.cdf'
-                span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+                span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
                 
                 pyt.tplot_restore(span_check_savepath+span_check_savename)
             
@@ -920,7 +920,7 @@ def t_r_plot(enc='all',enc_radius=67,atype='v'):
     
     #----------------------------save data vs r-----------------------------#
     if atype=='ptemp':
-        savepath = '/Users/besh2109/Desktop/Temperature Products/Ions vs R v0/'
+        savepath = '/Users/besh2109/Documents/Temperature Products/Ions vs R v0/'
         savename = 'psp_swp_T_vs_R.cdf'
         
         tplot_radial_full = Rfull
@@ -1287,7 +1287,7 @@ def t_anis_beta(enc='all',enc_radius=40):
         
         # breakpoint()
         
-        anis_save_path = '/Users/besh2109/Desktop/Temperature Products/Ions v1/'
+        anis_save_path = '/Users/besh2109/Documents/Temperature Products/Ions v1/'
         anis_save_name = 'enc_'+str(i)+'_ion_thermal_products.cdf'
 
         pyt.store_data("position_Rs",data={'x':anis_time, 'y':pos_data_arr})
@@ -1452,7 +1452,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
         radius_mod = '<'+str(enc_radius)
         
         
-        anis_save_path = '/Users/besh2109/Desktop/Temperature Products/Ions v1/'
+        anis_save_path = '/Users/besh2109/Documents/Temperature Products/Ions v1/'
         anis_save_name = 'enc_'+str(i)+'_ion_thermal_products.cdf'
         
         
@@ -1878,7 +1878,7 @@ def brazil(enc='no 1',enc_radius=45,plot='all'):
             bins = radial_bins[j]
             
             tplot_savename = 'Brazil_data_'+str(bins[0])+'_to_'+str(bins[1])+'_Rs.cdf'
-            tplot_savepath = '/Users/besh2109/Desktop/BrazilPlots/'   
+            tplot_savepath = '/Users/besh2109/Documents/BrazilPlots/'   
             
             q_rad_where = np.where((q_pos_full>bins[0])&(q_pos_full<bins[1]))
             q_rad_where = q_rad_where[0]
@@ -2227,7 +2227,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
     
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
-        span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/FOV flags/'
+        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
         
         pyt.tplot_restore(span_check_savepath+span_check_savename)
     
@@ -2255,7 +2255,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
         
         span_qtn_check_savename = 'SPAN_SPC_QTN_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
-        span_qtn_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+        span_qtn_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
         
         pyt.tplot_restore(span_qtn_check_savepath+span_qtn_check_savename)
         
@@ -2442,7 +2442,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
             
             if dcheck == 'ion_thermal':
             
-                anis_save_path = '/Users/besh2109/Desktop/Temperature Products/Ions v1/'
+                anis_save_path = '/Users/besh2109/Documents/Temperature Products/Ions v1/'
                 anis_save_name = 'enc_'+str(i)+'_ion_thermal_products.cdf'
                 
                 pyt.tplot_restore(anis_save_path+anis_save_name)
@@ -2512,7 +2512,7 @@ def quiescent_histograms(enc='all',enc_radius=45,plot='all',dtype='ion_anis',com
             
             if dcheck == 'ion_bulk':
                 
-                anis_save_path = '/Users/besh2109/Desktop/Temperature Products/Ions/'
+                anis_save_path = '/Users/besh2109/Documents/Temperature Products/Ions/'
                 anis_save_name = 'enc_'+str(i)+'_ion_thermal_products.cdf'
                 
                 # pyt.tplot_restore(anis_save_path+anis_save_name)
@@ -3407,7 +3407,7 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
     
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
-        span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/FOV flags/'
+        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
         
         pyt.tplot_restore(span_check_savepath+span_check_savename)
     
@@ -3435,7 +3435,7 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
         
         span_qtn_check_savename = 'SPAN_SPC_QTN_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
-        span_qtn_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+        span_qtn_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
         
         pyt.tplot_restore(span_qtn_check_savepath+span_qtn_check_savename)
         
@@ -3495,7 +3495,7 @@ def brazil_analysis(span_cut=True, bin_num=28): #made a seperate plotting routin
         bins = radial_bins[j]
         
         tplot_savename = 'Brazil_data_'+str(bins[0])+'_to_'+str(bins[1])+'_Rs.cdf'
-        tplot_savepath = '/Users/besh2109/Desktop/BrazilPlots/'   
+        tplot_savepath = '/Users/besh2109/Documents/BrazilPlots/'   
         
         pyt.tplot_restore(tplot_savepath+tplot_savename)
 
@@ -4296,7 +4296,7 @@ def alf_hist(span_cut=True,save=False):
     
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
-        span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/FOV flags/'
+        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
         
         pyt.tplot_restore(span_check_savepath+span_check_savename)
     
@@ -4324,7 +4324,7 @@ def alf_hist(span_cut=True,save=False):
         
         span_qtn_check_savename = 'SPAN_SPC_QTN_flags_enc_'+str(pepe)+'.cdf'
         # span_check_savename = 'SPAN_ion_fov_flags_enc_15.cdf'
-        span_qtn_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+        span_qtn_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
         
         pyt.tplot_restore(span_qtn_check_savepath+span_qtn_check_savename)
         
@@ -4381,7 +4381,7 @@ def alf_hist(span_cut=True,save=False):
         bins = radial_bins[i]
         
         tplot_savename = 'Brazil_data_'+str(bins[0])+'_to_'+str(bins[1])+'_Rs.cdf'
-        tplot_savepath = '/Users/besh2109/Desktop/BrazilPlots/'   
+        tplot_savepath = '/Users/besh2109/Documents/BrazilPlots/'   
         
         pyt.tplot_restore(tplot_savepath+tplot_savename)
 
@@ -5048,7 +5048,7 @@ def quiescent_list(lower=20,upper=30,nrand = None):
     
 def temperature_analysis():
     
-    tplot_path = '/Users/besh2109/Desktop/Temperature Products/Ions vs R v0/'
+    tplot_path = '/Users/besh2109/Documents/Temperature Products/Ions vs R v0/'
     tplot_name = 'psp_swp_T_vs_R.cdf'
     
     pyt.tplot_restore(tplot_path+tplot_name)

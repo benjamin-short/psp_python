@@ -282,7 +282,7 @@ def sort_list(list1, list2):
 def SPC_SPI_Construct(enc,spi_time,spi_data,spc_time,spc_data):
     
     span_check_savename = 'SPAN_SPC_QTN_flags_enc_'+str(enc)+'.cdf'
-    span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+    span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
     
     pyt.tplot_restore(span_check_savepath+span_check_savename)
 

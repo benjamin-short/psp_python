@@ -237,7 +237,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
         
         title = 'Encounter '+str(enc_num)+': '+t0p[0:20]+' to '+tfp[0:20]
         
-        z_save_path = '/Users/besh2109/Desktop/z_save/tplot/'
+        z_save_path = '/Users/besh2109/Documents/z_save/tplot/'
         z_save_name = 'z_tplot_enc'+str(enc_num)+'.cdf'
         
         filecheck = os.path.isfile(z_save_path+z_save_name)
@@ -1485,7 +1485,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
         #--------------------------------------------------------------------#
         
         span_check_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(encounter)+'.cdf'
-        span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
         
         pyt.tplot_restore(span_check_savepath+span_check_savename)
     
@@ -1760,7 +1760,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     # breakpoint()
     if pickle:
         
-        pickle_path = '/Users/besh2109/Desktop/z_pickle/'
+        pickle_path = '/Users/besh2109/Documents/z_pickle/'
         pickle_name = ''
         
     
@@ -1827,7 +1827,7 @@ def quiescent_calc_enc(enc_num,enc_radius=60,save=False):
         carr_lat = varis['carr_lat']
         carr_dif = varis['carr_dif']
         
-        save_path = '/Users/besh2109/Desktop/z_save/'
+        save_path = '/Users/besh2109/Documents/z_save/'
         
         pickle_tag = 'pickle/'
         numpy_tag = 'numpy/'
@@ -1926,7 +1926,7 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
                 # per_dist = per_dist_lst[enci]
             enci+=1
 
-    z_save_path = '/Users/besh2109/Desktop/z_save/z_v03/tplot/'
+    z_save_path = '/Users/besh2109/Documents/z_save/z_v03/tplot/'
     z_save_name = 'z_tplot_enc'+str(enc_num)+'.cdf'
     
     filecheck = os.path.isfile(z_save_path+z_save_name)
@@ -2575,7 +2575,7 @@ def SPAN_FOV(enc=1,enc_radius=45,plot=False, store=False):
         if store:
         
             tplot_savename = 'SPAN_ion_fov_flags'+'_enc_'+str(enc_num)+'.cdf'
-            tplot_savepath = '/Users/besh2109/Desktop/SPAN Checks/FOV flags/'
+            tplot_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
     
             tplot_time = times_unix
             
@@ -2772,7 +2772,7 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         #------------------construct SPAN quality flag---------------------#
         
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(enc_num)+'.cdf'
-        span_check_savepath = '/Users/besh2109/Desktop/SPAN Checks/FOV flags/'
+        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
         
         pyt.tplot_restore(span_check_savepath+span_check_savename)
         
@@ -2892,7 +2892,7 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         if store:
             # breakpoint()
             tplot_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(enc_num)+'.cdf'
-            tplot_savepath = '/Users/besh2109/Desktop/SPAN Checks/'
+            tplot_savepath = '/Users/besh2109/Documents/SPAN Checks/'
     
             tplot_time_spi = spi_dens_time_cor
             tplot_time_spc = spi_time
