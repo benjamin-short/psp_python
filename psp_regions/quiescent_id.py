@@ -39,14 +39,19 @@ import pandas as pd
 
 import matplotlib.colors
 import dateutil.parser
+
+import psp_regions.utils as utils
 # import matplotlib.pyplot as plt
 
 
 fields_id = os.environ['PSP_FIELDS_ID']
 fields_pass = os.environ['PSP_FIELDS_PW']
 
-sweap_id = os.environ['PSP_SWEAP_ID']
-sweap_pass = os.environ['PSP_SWEAP_PW']
+# sweap_id = os.environ['PSP_SWEAP_ID']
+# sweap_pass = os.environ['PSP_SWEAP_PW']
+
+sweap_id = os.environ['PSP_SWEAP_ID_berk']
+sweap_pass = os.environ['PSP_SWEAP_PW_berk']
 
 jsoc_email = os.environ['JSOC_EMAIL']
 
@@ -1374,7 +1379,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     spc_isfile = os.path.isfile(spc_file_path+spc_file_name)  
     spc_infile = spc_file_path+spc_file_name
 
-    
+    # breakpoint()
     if encounter in [1]:
 
         psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass,last_version=True)
@@ -1398,7 +1403,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
         
         psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass,last_version=True)
         
-        # breakpoint()
+        
         vel_data_spc = pyt.get_data('psp_spc_vp_fit_RTN')
         
         if vel_data_spc == None:
@@ -2146,13 +2151,19 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
     region_time_dates = pd.to_datetime(r_t_string)
     region_time_dates = region_time_dates.to_numpy()
     
-    breakpoint()
+    # breakpoint()
     
     #--------------#
 
     # fis1 = plt.figure(figsize=(30,18))
-    # fis1 = plt.figure(figsize=(25,10))
-    fis1 = plt.figure(figsize=(25,7.5))
+    fis1 = plt.figure(figsize=(25,10))
+    # fis1 = plt.figure(figsize=(25,7.5))
+    
+    mask_q_region_time, mask_non_q_time, mask_q_indices = utils.find_quiescent_points(enc_num,z_time)
+    
+    region_Br = Br[mask_q_indices]
+    region_z = Br[mask_q_indices]
+    region_time_dates = z_time_dates[mask_q_indices]
     
     time1 = [z_time_dates,z_time_dates]
     time2 = [region_time_dates,region_time_dates]
@@ -2183,7 +2194,7 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
         axs = fis1.add_subplot(1,1,ii+1)
         axs.plot(time1[ii],data1[ii], color='tab:blue',linewidth=0.22,label=label1[ii],zorder=1)
         # axs.plot(time1[ii],data1[ii], color='tab:blue',linewidth=2,label=label1[ii],zorder=1)
-        # axs.plot(time2[ii],data2[ii], color='tab:orange',linewidth=0.18,label=label2[ii],zorder=3)
+        axs.plot(time2[ii],data2[ii], color='tab:orange',linewidth=0.18,label=label2[ii],zorder=3)
         axs.tick_params(axis='y', which='major', labelsize=22)
         axs.tick_params(axis='x', which='major', labelsize=24)
         axs.xaxis.get_offset_text().set_size(24)
@@ -2238,7 +2249,7 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
             
         axs.set_xlim([z_time_dates[0],z_time_dates[(len(z_time_dates)-1)]])
         
-        leg = axs.legend(loc='upper left', fontsize=20)
+        leg = axs.legend(loc='lower left', fontsize=20)
         leg.legend_handles[0].set_linewidth(3)
         # leg.legend_handles[1].set_linewidth(3)
 
@@ -2282,6 +2293,8 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
 
     plt.close(fis1)
     plt.close('all')
+    
+    breakpoint()
         
 def quiescent_enc_plot(save=True,enc_save=True,other_comp=False):
     enc_num = 1

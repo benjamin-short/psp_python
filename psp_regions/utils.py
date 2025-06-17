@@ -16,6 +16,8 @@ import pyspedas as pys
 import pytplot as pyt
 
 import astropy.units as u
+import pandas as pd
+import csv
 
 import sunpy.map
 from sunpy.net import Fido, attrs as a
@@ -27,10 +29,23 @@ import parkersolarwind as psw
 from multiprocessing import Pool
 
 from scipy.optimize import minimize
+from sklearn.metrics import r2_score
+from scipy.interpolate import interp1d
 import sys
 
 import _pickle as cpkl
 
+from sunkit_magex import pfss
+import astropy.units as u
+import astropy.constants as const
+
+import matplotlib.pyplot as plt
+from matplotlib.legend_handler import HandlerBase
+from matplotlib.markers import MarkerStyle
+import matplotlib.dates as mdates
+
+from astropy.coordinates import SkyCoord
+from astropy.coordinates import Angle
 
 def find_every_i_days(dates, reference_index,day_num=3):
     reference_date = dates[reference_index]
@@ -115,46 +130,181 @@ def fix_hmi_meta(header):
     
     return header
 
-def cost_function(T0, r_obs, v_obs):
+def cost_function(T0, r_obs, v_obs,Tp_obs,gamma,model):
     """Computes the squared difference between observed and model velocities for a single r."""
     # parker_model = ParkerSolution(T0[0])  # Ensure T0 is treated as a scalar
     # print('gg')
-    r_in = np.linspace(1,70,2000)*u.R_sun
+    r_in = np.linspace(1,200,3000)*u.R_sun
     T0_in = T0[0]*u.MK
     # print(T0_in)
     # sys.stdout.flush()
-    sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_isothermal(r_in,T0_in)
-    # print('one')
-    # breakpoint()
+    if model=='iso':
+        sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_isothermal(r_in,T0_in)
+    if model=='poly':
+        sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_polytropic(r_in,T0_in,gamma)
+    if model=='isolayer':
+        # breakpoint()
+        K = Tp_obs/(r_obs**(-(2*(gamma-1))))
+        r_iso = (T0_in/K)**(-1/(2*(gamma-1)))
+        if r_iso.value > 150: #do not allow R_iso to go above 150 Rs. The truest answer should be ~10-30 Rs.
+            r_iso = 150*u.R_sun
+
+        result = psw.solve_isothermal_layer(r_in, r_iso, T0_in, gamma)
+        sol_pos_iso = result[0]
+        sol_pos_poly = result[4]
+        sol_pos = np.concatenate((sol_pos_iso[:-1].value, sol_pos_poly.value)) * u.R_sun
+        sol_vel_iso = result[2]
+        sol_vel_poly = result[6]
+        sol_vel = np.concatenate((sol_vel_iso[:-1].value, sol_vel_poly.value)) * u.km/u.s
+
+
+        # try:
+        #     result = psw.solve_isothermal_layer(r_in, r_iso, T0_in, gamma)
+        #     sol_pos_iso = result[0]
+        #     sol_pos_poly = result[4]
+        #     sol_pos = np.concatenate((sol_pos_iso[:-1].value, sol_pos_poly.value)) * u.R_sun
+        #     sol_vel_iso = result[2]
+        #     sol_vel_poly = result[6]
+        #     sol_vel = np.concatenate((sol_vel_iso[:-1].value, sol_vel_poly.value)) * u.km/u.s
+        # except Exception as e:
+        #     print(f"Error in solve_isothermal_layer with r_iso={r_iso:.1f}: {str(e)}", 
+        #           file=sys.stdout, flush=True)
+        #     print(r_obs,v_obs,Tp_obs,T0_in,file=sys.stdout, flush=True)
+        #     print('Checking K and R-iso:',K,r_iso,file=sys.stdout, flush=True)
+        #     raise 
+        #     # Return a large penalty value to guide minimization away from this point
+        
+
     # Find the index of the closest element
     closest_index = np.abs(sol_pos.value - r_obs.value).argmin()
     v_model = sol_vel[closest_index]
-    # print('two')
-    return (v_model - v_obs) ** 2  # Squared error
+    
+    cost = (v_model - v_obs) ** 2 # Squared error
+    
+    # if np.isnan(cost.value) or np.isinf(cost.value):
+    #     print(f"Cost function returning NaN or Inf: v_model={v_model}, v_obs={v_obs}, cost={cost}", 
+    #       file=sys.stdout, flush=True)
+    
+    return cost  
 
 def fit_single_T0(args):
-    r, v = args
-    # result = minimize(cost_function, x0=[1.0], args=(r, v), method="Nelder-Mead", options={"maxiter": 20})
-    result = minimize(cost_function, x0=[1.0], args=(r, v), method="L-BFGS-B", bounds=[(0.4, 4)], options={'maxiter': 100, 'gtol': 1e-5})
-    return result.x[0]
+    r, v, tp, gamma, model = args
+    
+    K = tp/(r**(-(2*(gamma-1))))
+    
+    if np.any(np.isnan([r.value, v.value, tp.value])):
+        return np.nan, np.nan*u.R_sun  # Skip minimize by returning NaN
+    
+    def cost_wrapper(T0, *args):
+        # print(f"Evaluating T0={T0}", file=sys.stdout, flush=True)
+        return cost_function(T0, *args)
+    
+    result = minimize(cost_wrapper, x0=[1.0], args=(r, v, tp, gamma, model), method="L-BFGS-B", bounds=[(0.3, 6)], options={'maxiter': 80, 'gtol': 1e-5})
+    r_iso = (result.x[0]*u.MK/K)**(-1/(2*(gamma-1)))
+    # print(r_iso, 'R_iso')
 
-def fit_T0_parallel(r_obs, v_obs):
+    return result.x[0], r_iso
+
+def fit_T0_parallel(r_obs, v_obs, Tp_obs, gamma, model):
     n = len(r_obs)
+    model = [model]*n
+    gamma = [gamma]*n
     
     with Pool() as pool:
         # Use imap for efficiency with a generator
         T0_fitted = []
-        
+        r2_fitted = []
         # Iterate over imap with the index to print progress
-        for i, T0 in enumerate(pool.imap(fit_single_T0, zip(r_obs, v_obs))):
-            T0_fitted.append(T0)
+        for i, T0 in enumerate(pool.imap(fit_single_T0, zip(r_obs, v_obs, Tp_obs, gamma, model))):
+            T0_fitted.append(T0[0])
+            
+            r_in = r_obs
+            r_iso = T0[1]
+            if not np.isnan(r_iso.value):
+                if r_iso>np.nanmax(r_in):
+                    
+                    r_iso = np.nanmax(r_in)
+                
+                if model[i]=='iso':
+                    sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_isothermal(r_in,T0[0]*u.MK)
+                if model[i]=='poly':
+                    sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_polytropic(r_in,T0[0]*u.MK,gamma[i])
+                if model[i]=='isolayer':
+                    result = psw.solve_isothermal_layer(r_in,r_iso,T0[0]*u.MK,gamma[i])
+                    sol_vel_iso = result[2]
+                    sol_vel_poly = result[6]
+                    sol_vel = np.concatenate((sol_vel_iso[:-1].value,sol_vel_poly.value))*u.km/u.s
+                
+                # Create mask to keep only non-NaN pairs
+                mask = ~np.isnan(v_obs.value) & ~np.isnan(sol_vel.value)
+                
+                # Filter both arrays
+                v_obs_clean = v_obs[mask].value
+                v_pred_clean = sol_vel[mask].value
+                
+                # Calculate R^2
+                r2 = r2_score(v_obs_clean, v_pred_clean)
+                r2_fitted.append(r2)
+            else:
+                r2_fitted.append(np.nan)
             
             # Print the percentage progress every 1% complete
             if (i + 1) % (n // 100) == 0:  # Print every 1% of the tasks
                 percent_complete = (i + 1) / n * 100
                 print(f"Progress: {percent_complete:.1f}% complete")
                 sys.stdout.flush()
-    return np.array(T0_fitted)
+    return np.array(T0_fitted), np.array(r2_fitted)
+
+def fit_T0_sequential(r_obs, v_obs, Tp_obs, gamma, model):
+    n = len(r_obs)
+    model = [model] * n  # Replicate model for each observation
+    gamma = [gamma] * n  # Replicate gamma for each observation
+    
+    # Fit T0 sequentially
+    T0_fitted = []
+    r2_fitted = []
+    for i, args in enumerate(zip(r_obs, v_obs, Tp_obs, gamma, model)):
+        T0 = fit_single_T0(args)
+        T0_fitted.append(T0[0])
+                    
+        r_in = r_obs
+        r_iso = T0[1]
+        
+        if not np.isnan(r_iso.value):
+            if r_iso>np.nanmax(r_in):
+                
+                r_iso = np.nanmax(r_in)
+            
+            if model[i]=='iso':
+                sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_isothermal(r_in,T0[0]*u.MK)
+            if model[i]=='poly':
+                sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_polytropic(r_in,T0[0]*u.MK,gamma[i])
+            if model[i]=='isolayer':
+                result = psw.solve_isothermal_layer(r_in,r_iso,T0[0]*u.MK,gamma[i])
+                sol_vel_iso = result[2]
+                sol_vel_poly = result[6]
+                sol_vel = np.concatenate((sol_vel_iso[:-1].value,sol_vel_poly.value))*u.km/u.s
+            
+            # Create mask to keep only non-NaN pairs
+            mask = ~np.isnan(v_obs.value) & ~np.isnan(sol_vel.value)
+            
+            # Filter both arrays
+            v_obs_clean = v_obs[mask].value
+            v_pred_clean = sol_vel[mask].value
+            
+            # Calculate R^2
+            r2 = r2_score(v_obs_clean, v_pred_clean)
+            r2_fitted.append(r2)
+        else:
+            r2_fitted.append(np.nan)
+
+        # Print progress every 1% complete
+        if (i + 1) % (n // 100) == 0:  # Avoid division by zero for small n
+            percent_complete = (i + 1) / n * 100
+            print(f"Progress: {percent_complete:.1f}% complete")
+            sys.stdout.flush()
+    
+    return np.array(T0_fitted), np.array(r2_fitted)
 
 def coord_to_polar(coord):
     return coord.lon.to_value('rad'), coord.radius.to_value('AU')
@@ -270,6 +420,38 @@ def sliding_median(array, window_size):
     medians[too_many_nans] = np.nan
     
     return medians
+
+def sliding_average(data, window_size, overlap_percentage):
+    """
+    Compute sliding average with adjustable window overlap.
+    
+    Parameters:
+    - data: List or numpy array of numerical data
+    - window_size: Size of the moving window (positive integer)
+    - overlap_percentage: Overlap as a fraction (0 to 1, e.g., 0.5 for 50%)
+    
+    Returns:
+    - averages: List of averages for each window
+    - indices: List of starting indices for each window
+    """
+    if window_size <= 0 or window_size > len(data):
+        raise ValueError("Window size must be positive and not exceed data length")
+    if not 0 <= overlap_percentage < 1:
+        raise ValueError("Overlap percentage must be between 0 and 1")
+    
+    # Calculate step size based on overlap percentage
+    step_size = max(1, int(window_size * (1 - overlap_percentage)))  # Ensure step_size >= 1
+    averages = []
+    indices = []
+    
+    # Slide the window with calculated step size
+    for start in range(0, len(data) - window_size + 1, step_size):
+        window = data[start:start + window_size]
+        averages.append(np.nanmean(window))
+        indices.append(start)
+    
+    return averages, indices
+
 
 def sort_list(list1, list2):
  
@@ -408,7 +590,7 @@ def encounter_dates(enc,rlim):
     Rs_km = 6.957e5*u.km #solar radius in km  
     
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/' #historical position
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v42.cdf')
     hpos = pyt.get_data('position')
     
     hpos_time_arr = hpos[0]
@@ -439,7 +621,6 @@ def encounter_dates(enc,rlim):
     tf = pys.time_string(time_select[-1])
     
     return t0, tf
-
 
 def jsoc_check(enc_start=1,enc_end=22,rlim=70,enc_list=None):
     
@@ -521,9 +702,270 @@ def PFSS_Br_estimation(pfss_out,seeds,r0_Rs,rss,A_scale=6.90):
     pfss_ss_br = ss_br.data[y_pixels,x_pixels] # retrieve values using pixel indices
     
     A_scale = A_scale #scaling factor for PFSS model B to match PSP data.
-    br_pfss = A_scale*np.array(pfss_ss_br)*(rss*u.R_sun/(r0_Rs))**2 * u.G # in Gauss, propagate out to PSP distances.
+    br_pfss = A_scale*np.array(pfss_ss_br)*(rss/r0_Rs)**2 * u.G # in Gauss, propagate out to PSP distances.
     br_pfss[nan_where] = np.nan # put the nans back in
-    br_pfss = br_pfss.to(u.nT) #convert to nT
     # breakpoint()
+    br_pfss = br_pfss.to(u.nT) #convert to nT
 
     return br_pfss
+
+def read_in_footpoints(t0='2020-01-29',tf=None,enc=None,save=True):
+    
+    if tf==None:
+        tf = pys.time_string(pys.time_float(t0)+86400)
+
+    if enc != None:    
+        tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords.cdf'
+        qregion_savename = 'enc_'+str(enc)+'_regions_raw.csv'
+    else:
+        tplot_savename = t0+'_'+tf+'_footpoint_coords.cdf'
+        qregion_savename = t0+'_'+tf+'_regions_raw.csv'
+        
+        t0float = pys.time_float(t0)
+        enc = 1
+        for i in enc_flt:
+            # if t0float>i[0] and t0float<i[1]:
+            #     encounter = enc
+            enc+=1
+        if tf==None:
+            tffloat = pys.time_float(t0)+86400
+        else:
+            tffloat=pys.time_float(tf)
+        
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
+    qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    
+    #------------------------------ Read in Tplot Variables ----------------------------------#
+    
+    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    
+    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_time = solar_lon_data[0]
+    sol_lon = solar_lon_data[1]
+    
+    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat = sol_lat_data[1]
+    
+    
+    return solar_lon_time, sol_lat, sol_lon
+
+def read_in_parker_fits(enc,model='iso'):
+
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fit_T0/'
+    tplot_savename = 'Enc_'+str(enc)+'_fit_T0_'+model+'.cdf'
+    
+    #------------------------------ Read in Tplot Variables ----------------------------------#
+    
+    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    
+    cdf_var = [model+"_T0_coronal_temp_fit",model+"_T0_coronal_temp_fit_max_err",model+"_T0_coronal_temp_fit_min_err",
+               model+"_r2_scores",model+"_r2_scores_max_err",model+"_r2_scores_min_err",
+               "PSP_Rs","Vsw_km","Tp_MK"]
+    
+    if model == 'isolayer':
+        
+        isolayer_list = ["isothermal_layer_height","isothermal_layer_height_max_err","isothermal_layer_height_min_err"]
+        for var in isolayer_list:
+            cdf_var.append(var)
+        
+    
+    # Dictionary to hold the tuples
+    tplot_dict = {}
+
+    # Get the list of all Tplot variable names
+    all_variable_names = pyt.tplot_names()
+    # Check if anything was loaded
+    if not all_variable_names:
+        print("No variables were loaded from the file.")
+        return tplot_dict  # Return empty dict if nothing loaded
+    else:
+        # print(f"Loaded {len(cdf_var)} variables: {cdf_var}")
+        pass
+        
+    # Loop through all variable names and create tuples
+    for var_name in cdf_var:
+        # Get the data for this variable
+        data = pyt.get_data(var_name)
+        
+        if data is not None:
+            # Create a tuple of (time_array, data_array)
+            tplot_dict[var_name] = (data[0], data[1])
+            
+            # Optional: Print to confirm
+            # print(f"Added {var_name}:")
+            # print(f"  Time array shape: {data[0].shape}")
+            # print(f"  Data array shape: {data[1].shape}")
+        else:
+            print(f"Variable: {var_name} has no data or is not a standard Tplot variable.")
+    
+    return tplot_dict
+
+def find_quiescent_points(enc,in_time):
+    
+    qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    qregion_savename = 'enc_'+str(enc)+'_regions_raw.csv'
+    
+    qregion_df = pd.read_csv(qregion_savepath+qregion_savename)
+    qregion_array = qregion_df.to_numpy()
+    
+    regions_arr = qregion_array
+    #read in PSP fit and other data
+    
+    #---------------- find footpoints associated with quiescent regions --------------------#
+    
+    q_time = np.array([])
+    
+    q_index_arr = np.array([],dtype=int)
+    
+    for k in regions_arr:
+
+        pre_flt = k[:2]
+        reg_flt = pys.time_float(pre_flt)
+        point_where = np.where((in_time>reg_flt[0])&(in_time<reg_flt[1]))
+        point_where = point_where[0]
+        
+        q_index_arr = np.append(q_index_arr,point_where)
+        
+        region_time_tmp = in_time[point_where]
+
+        q_time = np.append(q_time,region_time_tmp)
+    
+    indices = np.linspace(0,len(in_time)-1,num=len(in_time),dtype=int) #indices for whole set of encounter data points.
+    non_q_index_arr = np.setdiff1d(indices, q_index_arr) #indices for non-quiescent wind.
+
+    non_q_time = in_time[non_q_index_arr]
+    
+    return q_time, non_q_time, q_index_arr
+
+def sort_by_footpoint_coords(enc,lon_range=None,lat_range=None,obstime=None):
+    
+    #------------------------------ Set path to tplot and quiescent region files ----------------------------------#
+
+    tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords_hmi_rss_3_1.cdf'
+        
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
+    #------------------------------ Read in Tplot Variables ----------------------------------#
+    
+    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    
+    
+    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_time = solar_lon_data[0]
+    sol_lon = solar_lon_data[1]
+
+    
+    sol_lat_data = pyt.get_data('solar_lat')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat = sol_lat_data[1]
+    
+    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_time = r0_Rs_data[0]
+    r0_Rs = r0_Rs_data[1]
+    
+    #--------------- sort by lon-lat range------------------#
+    if not lon_range:
+        lanes_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fits/'
+        lanes_savename = 'lanes_gaussian_fwhm7_run_avg.fits'
+        
+        lanes_map = sunpy.map.Map(lanes_savepath+lanes_savename)
+        
+        # Get the map's spatial extent in world coordinates
+        lon_min, lon_max = lanes_map.meta['crval1'] - lanes_map.meta['cdelt1'] * lanes_map.data.shape[1] / 2, \
+                            lanes_map.meta['crval1'] + lanes_map.meta['cdelt1'] * lanes_map.data.shape[1] / 2
+        lat_min, lat_max = lanes_map.meta['crval2'] - lanes_map.meta['cdelt2'] * lanes_map.data.shape[0] / 2, \
+                            lanes_map.meta['crval2'] + lanes_map.meta['cdelt2'] * lanes_map.data.shape[0] / 2
+                            
+        obstime = lanes_map.date
+                            
+    else:
+        lon_min = lon_range[0]
+        lon_max = lon_range[1]
+        lat_min = lat_range[0]
+        lat_max = lat_range[1]
+        obstime = obstime
+    # Define the bounds (already in decimal degrees)
+    lon_min = lon_min * u.deg
+    lon_max = lon_max * u.deg
+    lat_min = lat_min * u.deg
+    lat_max = lat_max * u.deg
+    
+    # # Define the corner coordinates of the map bounds
+    # bounds_coords = SkyCoord([lon_min, lon_max], [lat_min, lat_max], 
+    #                          frame="heliographic_carrington", 
+    #                          obstime=obstime, 
+    #                          observer="earth")
+    
+    # Convert to pixel coordinates
+    # bounds_pixel = lanes_map.world_to_pixel(bounds_coords)
+    
+    sol_coords = SkyCoord(sol_lon*u.deg,sol_lat*u.deg,
+                          frame='heliographic_carrington',
+                          obstime=obstime,
+                          observer="earth")
+    
+    # # Extract pixel limits
+    # x_pixel_min, x_pixel_max = bounds_pixel.x.value[0], bounds_pixel.x.value[1]
+    # y_pixel_min, y_pixel_max = bounds_pixel.y.value[0], bounds_pixel.y.value[1]
+    
+    # Wrap longitudes around 0–360 degrees if necessary
+    data_coords_lon = sol_coords.lon.wrap_at(360 * u.deg)
+    
+    # Create masks for the range
+    lon_mask = (data_coords_lon >= lon_min) & (data_coords_lon <= lon_max)
+    lat_mask = (sol_coords.lat >= lat_min) & (sol_coords.lat <= lat_max)
+    
+    # Combine the masks
+    mask = lon_mask & lat_mask
+    
+    # Filter all SkyCoord objects
+    sol_filtered_time = solar_lon_time[mask]
+    sol_filtered_coords = sol_coords[mask]
+
+    # # Convert filtered coordinates to pixel space
+    # sol_pixel_coords = lanes_map.world_to_pixel(sol_filtered_coords)
+    
+    return sol_filtered_time, sol_filtered_coords, mask
+
+def find_distance_to_nearest_lane(modified_map, sol_filtered_coords, q_filtered_coords):
+    
+        
+    # Step 1: Find pixels in modified_map where value == 1
+    # Get indices of pixels with value 1
+    y_idx, x_idx = np.where(modified_map.data == 1)
+    
+    # Step 2: Convert these pixel indices to world coordinates
+    # Create pixel coordinates as arrays
+    pixel_coords = np.array([x_idx, y_idx]).T  # Shape: (N, 2) for N pixels
+    # Convert to SkyCoord using pixel_to_world
+    ones_coords = modified_map.pixel_to_world(x_idx * u.pix, y_idx * u.pix)
+    # ones_coords is a SkyCoord array with Carrington coordinates
+    
+    # Step 3: Compute distances for sol_filtered_coords
+    sol_distances = []
+    for coord in sol_filtered_coords:
+        # Calculate angular separation to all "1" pixels
+        separations = coord.separation(ones_coords)  # Returns Quantity array in degrees
+        # Find the minimum separation
+        min_distance = np.min(separations)
+        sol_distances.append(min_distance)
+    
+    # Step 4: Compute distances for q_filtered_coords
+    q_distances = []
+    for coord in q_filtered_coords:
+        # Calculate angular separation to all "1" pixels
+        separations = coord.separation(ones_coords)
+        min_distance = np.min(separations)
+        q_distances.append(min_distance)
+    
+    # Convert distances to numpy arrays for convenience
+    sol_distances = np.array([d.value for d in sol_distances]) * u.deg
+    q_distances = np.array([d.value for d in q_distances]) * u.deg
+    
+    # Optional: Convert angular distances to physical distances (Mm)
+    # Assuming solar radius ~696,000 km, 1 deg ≈ 12.1 Mm at solar surface
+    solar_radius = 696000 * u.km
+    deg_to_mm = (solar_radius * (2 * np.pi / (360*u.deg))).to(u.Mm / u.deg)  # ~12.1 Mm/deg
+    sol_distances_mm = sol_distances * deg_to_mm
+    q_distances_mm = q_distances * deg_to_mm
+    
+    return sol_distances_mm, q_distances_mm

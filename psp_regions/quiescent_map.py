@@ -12,6 +12,10 @@ import numpy as np
 import os
 import sys
 
+import glob
+
+import random
+
 import pandas as pd
 import csv
 
@@ -33,6 +37,7 @@ import astropy.constants as const
 from astropy.io import fits
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
+from astropy.coordinates import Angle
 
 import sunpy.map
 from sunpy.net import Fido, attrs as a
@@ -41,28 +46,28 @@ from sunpy.map.header_helper import make_heliographic_header
 from sunpy.coordinates import get_body_heliographic_stonyhurst, get_horizons_coord
 from sunpy.time import parse_time
 from sunpy.coordinates import frames
+from sklearn.metrics import r2_score
 
-from reproject import reproject_interp, reproject_and_coadd
+# from reproject import reproject_interp, reproject_and_coadd
 from sunkit_magex import pfss
 
 #---solve parkers solution----#
 
 import parkersolarwind as psw
 
-#-----------------------------#
-
-import glob
-
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-import utils
+import psp_regions.utils as utils
 
 fields_id = os.environ['PSP_FIELDS_ID']
 fields_pass = os.environ['PSP_FIELDS_PW']
 
-sweap_id = os.environ['PSP_SWEAP_ID']
-sweap_pass = os.environ['PSP_SWEAP_PW']
+# sweap_id = os.environ['PSP_SWEAP_ID']
+# sweap_pass = os.environ['PSP_SWEAP_PW']
+
+sweap_id = os.environ['PSP_SWEAP_ID_berk']
+sweap_pass = os.environ['PSP_SWEAP_PW_berk']
 
 jsoc_email = os.environ['JSOC_EMAIL']
 
@@ -79,9 +84,8 @@ class MarkerSizeHandler(HandlerBase):
 
         return [plt.Line2D([x], [y], marker=marker)]
 
-
 def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,save_coords=False,rlim=55,
-                  source='hmi',adapt_source='gong',peri=True,low_res=True,full_run=True,test_plot=True,V_err=0.04,V_err_check=True,magneto_err=0):
+                  source='hmi',adapt_source='gong',peri=False,low_res=True,full_run=True,test_plot=True,V_err=0.04,V_err_check=True,magneto_err=0):
     
     save_file_tag = '_'+source+'_rss_'+str(rss)[0]
     
@@ -163,6 +167,9 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     spc_temp_data = pyt.get_data('psp_spc_wp1_fit')
     
+    if spc_temp_data == None:
+        spc_temp_data = pyt.get_data('spp_spc_wp1_fit')
+    
     spc_temp_time_arr = spc_temp_data[0]
     spc_temp_data_arr = spc_temp_data[1]
     
@@ -203,7 +210,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     mag_data = pyt.get_data('psp_fld_l2_mag_RTN_1min')
     
-    mag_time_arr = mag_data[0]*u.s
+    mag_time_arr = mag_data[0]
     mag_data_arr = mag_data[1]
     
     br_fields = mag_data_arr[:,0]
@@ -261,16 +268,12 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     pos_len = len(r0)
     # breakpoint()
+
     #-----------------------scale down the pfss model--------------------#
     
     if low_res:
-        
-        # Original indices (or times)
-        # original_indices = np.linspace(r0_time_arr[0], r0_time_arr[-1], num=pos_len)
-        # New indices for downsampling
-        # low_res_times = np.linspace(r0_time_arr[0], r0_time_arr[-1], num=15000)
+
         low_res_times = np.linspace(r0_time_arr[0], r0_time_arr[-1], num=5000)
-        
         
         r0_Rs_i = np.interp(low_res_times,r0_time_arr,r0_Rs)
         r0_i = np.interp(low_res_times,r0_time_arr,r0)
@@ -293,7 +296,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         
         br_med_i = np.interp(low_res_times,mag_time_arr,sliding_med_br)
         
-        r0_time_arr = low_res_times
+        r0_time_arr = low_res_times*u.s
         r0 = r0_i
         r0_Rs = r0_Rs_i
         x_pos = x_i
@@ -314,37 +317,44 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     # fields_polarity_no_sbs = sliding_med_br/np.abs(sliding_med_br)
     # fields_polarity = br_fields/np.abs(br_fields) #just ±1 for positive/negative Br
-    
+    # breakpoint()
     #------------------------Solve for Parker Spiral-------------------#
-
-    # calculate time solar wind measured by PSP launched from the source surface.
-    time_of_flight = np.abs(rss*u.R_sun-r0_Rs)/Vsw_Rs #should be in seconds. Time traveled from Rss
     
-    corrected_time = r0_time_arr-time_of_flight #epoch time which the solar wind launched, assuming it was flying at the same speed the whole time. (ASSUMPTION)
+    # calculate time solar wind measured by PSP launched from the source surface.
+    time_of_flight = np.abs(rss-r0_Rs)*u.R_sun/Vsw_Rs #should be in seconds. Time traveled from Rss
+    
+    # Handle NaN in time_of_flight (caused by NaN in Vsw_Rs)
+    time_of_flight_series = pd.Series(time_of_flight.value)
+    if pd.isna(time_of_flight_series[0]):  # Check if first value is NaN
+        time_of_flight_series[0] = time_of_flight_series.bfill().iloc[0] 
+    time_of_flight = time_of_flight_series.to_numpy()  # Convert back to NumPy array
+    
+    corrected_time = r0_time_arr-time_of_flight*u.s #epoch time which the solar wind launched, assuming it was flying at the same speed the whole time. (ASSUMPTION)
     series = pd.Series(corrected_time)
     corrected_time = series.interpolate() #interpolates over the nans.
+    corrected_time_array = corrected_time.to_numpy()
 
-    carr_lon_psp = np.arctan2(y_pos, x_pos).to(u.deg)
+    carr_lon_psp = (np.arctan2(y_pos, x_pos)*u.radian).to(u.deg)
 
     carr_lon_psp = np.where(carr_lon_psp < 0 * u.deg, carr_lon_psp + 360 * u.deg, carr_lon_psp)
 
-    carr_lat_psp = np.arcsin(z_pos / r0).to(u.deg)
+    carr_lat_psp = (np.arcsin(z_pos / r0)*u.radian).to(u.deg)
 
     w = 360/(25.38*86400)*u.deg/u.s # angular frequency of the sun in degrees/sec
     # w = 2*np.pi/(25.38*86400)*u.radian/u.s # angular frequency of the sun in radians/sec
 
     sintheta = np.sin((90*u.deg-carr_lat_psp).to(u.radian)) #sin of the azimuthal angle, which is 90 degrees minus the latitude
 
-    src_lon = carr_lon_psp - (w*sintheta/Vsw_Rs)*(rss*u.R_sun-r0_Rs) #carrington longitude of the PSP traced by a Parker Spiral on the source surface
+    src_lon = carr_lon_psp - (w*sintheta/Vsw_Rs)*(rss-r0_Rs)*u.R_sun #carrington longitude of the PSP traced by a Parker Spiral on the source surface
     
-    err_max_lon = carr_lon_psp - (w*sintheta/Vsw_Rs_err_max)*(rss*u.R_sun-r0_Rs) #carrington longitude of the PSP traced by a Parker Spiral on the source surface
-    err_min_lon = carr_lon_psp - (w*sintheta/Vsw_Rs_err_min)*(rss*u.R_sun-r0_Rs)
+    err_max_lon = carr_lon_psp - (w*sintheta/Vsw_Rs_err_max)*(rss-r0_Rs)*u.R_sun #carrington longitude of the PSP traced by a Parker Spiral on the source surface
+    err_min_lon = carr_lon_psp - (w*sintheta/Vsw_Rs_err_min)*(rss-r0_Rs)*u.R_sun
     
-    t0_corr = pys.time_string(corrected_time[0].value)
-    tf_corr = pys.time_string(corrected_time[-1].value)
+    t0_corr = pys.time_string(corrected_time_array[0])
+    tf_corr = pys.time_string(corrected_time_array[-1])
 
     #----------------------------find date of perihelion----------------------#
-    
+
     per_where = np.where(r0_Rs == np.min(r0_Rs))
     per_where = per_where[0]
     
@@ -353,15 +363,15 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     peri_date_t0 = pys.time_string(peri_time[0].value-43200) #select the date for perihelion
     peri_date_tf = pys.time_string(peri_time[0].value+43200) 
     
-    corr_peri_time = corrected_time[per_where]
-    corr_peri_date = pys.time_string(corr_peri_time[0].value)
+    corr_peri_time = corrected_time_array[per_where]
+    corr_peri_date = pys.time_string(corr_peri_time[0])
     
-    corr_peri_date_t0 = pys.time_string(corr_peri_time[0].value-43200) #select the date when the plasma observed at perihelion left the sun
-    corr_peri_date_tf = pys.time_string(corr_peri_time[0].value+43200)
+    corr_peri_date_t0 = pys.time_string(corr_peri_time[0]-43200) #select the date when the plasma observed at perihelion left the sun
+    corr_peri_date_tf = pys.time_string(corr_peri_time[0]+43200)
     
     if magneto_err !=0:
-        corr_peri_date_t0 = pys.time_string(corr_peri_time[0].value-43200+magneto_err*86400) #select the date when the plasma observed at perihelion left the sun
-        corr_peri_date_tf = pys.time_string(corr_peri_time[0].value+43200+magneto_err*86400)
+        corr_peri_date_t0 = pys.time_string(corr_peri_time[0]-43200+magneto_err*86400) #select the date when the plasma observed at perihelion left the sun
+        corr_peri_date_tf = pys.time_string(corr_peri_time[0]+43200+magneto_err*86400)
     
     #--------------------------PFSS MODEL START-----------------------------#
     
@@ -445,10 +455,13 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
             
             # hdul[0].header['DATE-OBS'] = formatted_date
             
-            hmi_fits = fits.open(first_file)
-            hmi_header = utils.fix_hmi_meta(hmi_fits.header)
+            hmi_data, hmi_header = fits.getdata(first_file, header=True)
             
-            pfss_map = sunpy.map.Map(hmi_fits.data,hmi_header)
+            hmi_data[np.isnan(hmi_data)]=np.nanmean(hmi_data)
+            
+            hmi_header_new = utils.fix_hmi_meta(hmi_header)
+            
+            pfss_map = sunpy.map.Map(hmi_data,hmi_header_new)
             
             pfss_in = pfss.Input(pfss_map, nrho, rss)
             pfss_out = pfss.pfss(pfss_in)
@@ -626,7 +639,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         
         fits_floats = pys.time_float(fits_dates)
         
-        indices = utils.group_elements(corrected_time.value,fits_floats)
+        indices = utils.group_elements(corrected_time_array,fits_floats)
         
         unique_indices, ind_count = np.unique(indices,return_counts=True)
         
@@ -698,7 +711,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
             tracer = pfss.tracing.FortranTracer()
             r = r_tmp * const.R_sun
             
-            lat_tmp = np.array(carr_lat_psp[long_where])
+            lat_tmp = np.array(carr_lat_psp[long_where])*u.deg
             lon_tmp = src_lon[long_where]
             r0_Rs_tmp = r0_Rs[long_where]
 
@@ -708,20 +721,20 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
             
             if V_err_check:
             
-                lat_tmp = np.array(carr_lat_psp[long_where])
+                lat_tmp = np.array(carr_lat_psp[long_where])*u.deg
                 max_err_lon_tmp = err_max_lon[long_where]
                 max_err_lat_tmp, max_err_lon_tmp = lat_tmp.ravel(), max_err_lon_tmp.ravel()
                 max_err_seeds = SkyCoord(max_err_lon_tmp, max_err_lat_tmp, r, frame=pfss_out.coordinate_frame)
                 
-                lat_tmp = np.array(carr_lat_psp[long_where])
+                lat_tmp = np.array(carr_lat_psp[long_where])*u.deg
                 min_err_lon_tmp = err_min_lon[long_where]
                 min_err_lat_tmp, min_err_lon_tmp = lat_tmp.ravel(), min_err_lon_tmp.ravel()
-                min_err_seeds = SkyCoord(min_err_lat_tmp, min_err_lon_tmp, r, frame=pfss_out.coordinate_frame)
+                min_err_seeds = SkyCoord(min_err_lon_tmp, min_err_lat_tmp, r, frame=pfss_out.coordinate_frame)
 
                 max_err_field_lines_tmp = tracer.trace(max_err_seeds, pfss_out)
                 min_err_field_lines_tmp = tracer.trace(min_err_seeds, pfss_out)
             
-            br_guess = utils.PFSS_Br_estimation(pfss_out, seeds, r0_Rs_tmp, rss, A_scale=5)
+            br_guess = utils.PFSS_Br_estimation(pfss_out, seeds, r0_Rs_tmp, rss, A_scale=3)
             
             # Br_tmp.append(br_guess)
             Br_tmp = np.append(Br_tmp,br_guess.value)
@@ -747,12 +760,18 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
                     ftpnt_lon.append(float(coords.lon/u.deg))
                     ftpnt_lat.append(float(coords.lat/u.deg))
                     if V_err_check:
-                        err_max_coords = field_line_max.solar_footpoint
-                        err_min_coords = field_line_min.solar_footpoint
-                        ftpnt_lon_err_max.append(float(err_max_coords.lon/u.deg))
-                        ftpnt_lon_err_min.append(float(err_min_coords.lon/u.deg))
-                        ftpnt_lat_err_max.append(float(err_max_coords.lat/u.deg))
-                        ftpnt_lat_err_min.append(float(err_min_coords.lat/u.deg))
+                        try:
+                            err_max_coords = field_line_max.solar_footpoint
+                            err_min_coords = field_line_min.solar_footpoint
+                            ftpnt_lon_err_max.append(float(err_max_coords.lon/u.deg))
+                            ftpnt_lon_err_min.append(float(err_min_coords.lon/u.deg))
+                            ftpnt_lat_err_max.append(float(err_max_coords.lat/u.deg))
+                            ftpnt_lat_err_min.append(float(err_min_coords.lat/u.deg))
+                        except:
+                            ftpnt_lon_err_max.append(np.nan)
+                            ftpnt_lon_err_min.append(np.nan)
+                            ftpnt_lat_err_max.append(np.nan)
+                            ftpnt_lat_err_min.append(np.nan)
                     polar_tmp.append(pol)
                     exp_tmp.append(exp)
                     
@@ -763,17 +782,19 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     #------------------SAVING THE FOOTPOINT COORDINATES-------------------#
     if save_coords:
         
-        sol_long = np.array(ftprnt_lon) #footpoint longitudes
+        # breakpoint()
+        
+        sol_long = np.array(ftpnt_lon) #footpoint longitudes
 
-        sol_lat = np.array(ftprnt_lat) #footpoint latitudes
+        sol_lat = np.array(ftpnt_lat) #footpoint latitudes
 
         dates = np.array(pys.time_string(r0_time_arr[i_non_breaks].value))
         date_flts = np.array(r0_time_arr[i_non_breaks].value)
         PSP_lon = np.array(carr_lon_psp[i_non_breaks].value)
         PSP_lat = np.array(carr_lat_psp[i_non_breaks].value)
-        PSP_Rs = np.array(r0_Rs[i_non_breaks].value)
+        PSP_Rs = np.array(r0_Rs[i_non_breaks])
         Vsw_Rs_new = np.array(Vsw_Rs[i_non_breaks].value)
-        Tp_new = np.array(Tp[i_non_breaks].value)
+        Tp_new = np.array(Tp[i_non_breaks])
         polarity = np.array(polar_tmp)
         # Br_PFSS = np.array(Br_tmp[i_non_breaks])
         
@@ -793,7 +814,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
             expansion = np.array(expans_fact[i_non_breaks])
         else:
             expansion = np.array(exp_tmp)
-        c_time = np.array(corrected_time[i_non_breaks])
+        c_time = np.array(corrected_time_array[i_non_breaks])
     
         tplot_time = date_flts
         
@@ -831,21 +852,18 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         pyt.store_data("corrected_time",data={'x':tplot_time, 'y':tplot_c_time})
     
         cdf_var_list = ["solar_lon","solar_lon_err_max","solar_lon_err_min","solar_lat","solar_lat_err_max","solar_lat_err_min",
-                        "PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","Temp_p","polarity","expansion_factor"]
+                        "PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","Temp_p","polarity","expansion_factor","corrected_time"]
         
         pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
         
         if full_run:
-            sort_footpoints(enc=enc)
+            sort_footpoints(enc=enc,infile=tplot_savename)
             
     if test_plot:
         fig_br = plt.figure(figsize=(17.5,7))
         ax = fig_br.add_subplot(111)
         
-        if source == 'hmi':
-            Br_plot = -Br_tmp
-        if source == 'gong':
-            Br_plot = Br_tmp
+        Br_plot = Br_tmp
         
         ax.plot(r0_time_arr[i_non_breaks],Br_plot[i_non_breaks],color='tab:green',label='PFSS estimated Br') #threw in the minus sign to make the model work. Seems to be backwards.
         ax.plot(r0_time_arr[i_non_breaks],sliding_med_br[i_non_breaks],color='tab:blue',label='FIELDS measured Br')
@@ -860,7 +878,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         plt.legend()
         plt.show()
     
-def sort_footpoints(t0='2020-01-29',tf=None,enc=None,save=True):
+def sort_footpoints(t0='2020-01-29',tf=None,enc=None,save=True,infile=None):
     # w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
 
     #------------------------------ Set path to tplot and quiescent region files ----------------------------------#
@@ -885,10 +903,13 @@ def sort_footpoints(t0='2020-01-29',tf=None,enc=None,save=True):
             tffloat = pys.time_float(t0)+86400
         else:
             tffloat=pys.time_float(tf)
-        
+    
+    if infile:
+        tplot_savename = infile
+    
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
     qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
-
+    # breakpoint()
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
     pyt.tplot_restore(tplot_savepath+tplot_savename)
@@ -1071,9 +1092,8 @@ def sort_footpoints(t0='2020-01-29',tf=None,enc=None,save=True):
         pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
 
 def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,save_coords=False,rlim=65,
-                  source='hmi',adapt_source='gong',peri=True,low_res=True,full_run=True,test_plot=False):
+                  source='hmi',adapt_source='gong',peri=False,low_res=True,full_run=True,test_plot=False):
    
-    
     file_tag = '_'+source
     
     Rs_km = 6.957e5*u.km #solar radius in km  
@@ -1241,12 +1261,22 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     convert_to_datetime = np.vectorize(lambda epoch: datetime.utcfromtimestamp(epoch))
     datetime_arr = convert_to_datetime(r0_time_arr)
     
-    #------------------------Solve for Parker Spiral, I think -------------------#
+    #------------------------Solve for Parker Spiral-------------------#
+    
     # breakpoint()
     # calculate time solar wind measured by PSP launched from the source surface.
-    del_time = np.abs(rss*u.R_sun-r0_Rs)/Vsw_Rs #should be in seconds. Time traveled from Rss
+    time_of_flight = (np.abs(rss*u.R_sun-r0_Rs)/Vsw_Rs).value #should be in seconds. Time traveled from Rss
+
+    # Handle NaN in time_of_flight (caused by NaN in Vsw_Rs)
+    time_of_flight_series = pd.Series(time_of_flight)
+    if pd.isna(time_of_flight_series[0]):  # Check if first value is NaN
+        time_of_flight_series[0] = time_of_flight_series.bfill().iloc[0] 
+    time_of_flight = time_of_flight_series.to_numpy()  # Convert back to NumPy array
     
-    corrected_time = r0_time_arr*u.s-del_time #epoch time which the solar wind launched, assuming it was flying at the same speed the whole time. (ASSUMPTION)
+    corrected_time = r0_time_arr*u.s-time_of_flight*u.s #epoch time which the solar wind launched, assuming it was flying at the same speed the whole time. (ASSUMPTION)
+    series = pd.Series(corrected_time)
+    corrected_time = series.interpolate() #interpolates over the nans.
+    corrected_time_array = corrected_time.to_numpy()
 
     carr_lon_psp = np.arctan2(y_pos, x_pos).to(u.deg)
 
@@ -1255,70 +1285,54 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     carr_lat_psp = np.arcsin(z_pos / r0).to(u.deg)
 
     w = 360/(25.38*86400)*u.deg/u.s # angular frequency of the sun in degrees/sec
-    # w = 2*np.pi/(25.38*86400) # angular frequency of the sun in radians/sec
+    # w = 2*np.pi/(25.38*86400)*u.radian/u.s # angular frequency of the sun in radians/sec
 
     sintheta = np.sin((90*u.deg-carr_lat_psp).to(u.radian)) #sin of the azimuthal angle, which is 90 degrees minus the latitude
 
     src_lon = carr_lon_psp - (w*sintheta/Vsw_Rs)*(rss*u.R_sun-r0_Rs) #carrington longitude of the PSP traced by a Parker Spiral on the source surface
-
-    # Create a new array with non-NaN elements
-    non_nan_corrected_time = corrected_time[~np.isnan(corrected_time)]
+    
+    t0_corr = pys.time_string(corrected_time_array[0])
+    tf_corr = pys.time_string(corrected_time_array[-1])
 
     #----------------------------find date of perihelion----------------------#
     
+    # breakpoint()
     per_where = np.where(r0_Rs == np.min(r0_Rs))
     per_where = per_where[0]
     
     peri_time = r0_time_arr[per_where]
-    peri_date = pys.time_string(peri_time[0]) #select the date for perihelion
     
     peri_date_t0 = pys.time_string(peri_time[0]-43200) #select the date for perihelion
-    peri_date_tf = pys.time_string(peri_time[0]+43200) #select the date for perihelion
+    peri_date_tf = pys.time_string(peri_time[0]+43200) 
+    
+    corr_peri_time = corrected_time_array[per_where]
+    corr_peri_date = pys.time_string(corr_peri_time[0])
+    
+    corr_peri_date_t0 = pys.time_string(corr_peri_time[0]-43200) #select the date when the plasma observed at perihelion left the sun
+    corr_peri_date_tf = pys.time_string(corr_peri_time[0]+43200)
+    
     
     #--------------------------PFSS MODEL START-----------------------------#
     
     if source=='hmi':
         
         if peri:
-            t_start_hmi = parse_time(peri_date_t0)
-            t_end_hmi = parse_time(peri_date_tf)
+            t_start_hmi = parse_time(corr_peri_date_t0)
+            t_end_hmi = parse_time(corr_peri_date_tf)
         # pfss_out = hmi2pfss(dt=t0_del_dt)
         else:
-            t_start_hmi = parse_time(t0)
-            t_end_hmi = parse_time(tf)
-        # results_hmi = Fido.search(a.jsoc.Notify(os.environ["JSOC_EMAIL"]),a.jsoc.Time(t_start_hmi.value,t_end_hmi.value),a.jsoc.Series('hmi.mrdailysynframe_720s'))
-        # breakpoint()
+            t_start_hmi = parse_time(t0_corr)
+            t_end_hmi = parse_time(tf_corr)
+
         results_hmi = Fido.search(a.jsoc.Notify(os.environ["JSOC_EMAIL"]),a.jsoc.Time(t_start_hmi.value,t_end_hmi.value),a.jsoc.Series('hmi.mrdailysynframe_small_720s'))
-        
-        # res_atrs = results_hmi['JSOC']
-        # result_times = res_atrs['T_REC']
-        
-        # filenames = []
-        # path_check = []
-        # for i in result_times:
-        #     tmp_str = str(i)
-        #     full_path = os.environ['SUNPY_DATA_DIR']+'/hmi/'+'hmi.mrdailysynframe_small_720s.'+tmp_str[:4]+tmp_str[5:7]+tmp_str[8:13]+tmp_str[14:16]+tmp_str[17:23]+'.data.fits'
-        #     filenames.append(full_path)
-            
-        #     if os.path.isfile(full_path):
-        #         path_check.append(True)
-        #     else:
-        #         path_check.append(False)
-        
-        # if np.sum(path_check)==len(path_check):
-        #     pass
-        # else:
-        #     true_where = np.where(np.array(path_check))
-        #     true_where = true_where[0]
-        #     filenames = np.array(filenames)[true_where]
         
         filenames = Fido.fetch(results_hmi, path=os.environ['SUNPY_DATA_DIR']+'/hmi')
         
     if source=='gong':
         
         if peri:
-            t0 = peri_date_t0
-            tf = peri_date_tf
+            t0 = corr_peri_date_t0
+            tf = corr_peri_date_tf
         # pfss_out = hmi2pfss(dt=t0_del_dt)
         else:
             pass
@@ -1329,8 +1343,8 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     if source=='adapt':
         
         if peri:
-            t0 = peri_date_t0
-            tf = peri_date_tf
+            t0 = corr_peri_date_t0
+            tf = corr_peri_date_tf
         # pfss_out = hmi2pfss(dt=t0_del_dt)
         else:
             pass
@@ -1412,7 +1426,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
             # expans_fact = np.array(field_lines_tmp.expansion_factors) #expansion factors
             
             pfss_time_arr = np.array(r0_time_arr)
-            pfss_polarity_arr = -field_lines_tmp.polarities
+            pfss_polarity_arr = field_lines_tmp.polarities
             
             where = np.where(pfss_polarity_arr==fields_polarity_no_sbs)
             where = where[0]
@@ -1476,7 +1490,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
         # date_list = [dt.date() for dt in fits_dts]
         # date_list = np.vectorize(lambda dts: dts.date())(fits_dates)
 
-        peri_dt = datetime.fromisoformat(peri_date)
+        peri_dt = datetime.fromisoformat(corr_peri_date)
         
         dif_arr = np.abs(fits_dts-peri_dt)
         
@@ -1561,7 +1575,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
         
         fits_floats = pys.time_float(fits_dates)
         
-        indices = utils.group_elements(non_nan_corrected_time.value,fits_floats)
+        indices = utils.group_elements(corrected_time_array,fits_floats)
         
         unique_indices, ind_count = np.unique(indices,return_counts=True)
                 
@@ -1644,7 +1658,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
                 
                 
                     # ss_br = pfss_out.source_surface_br
-                    # Create the figure and axes
+                    # # Create the figure and axes
                     # fig = plt.figure()
                     # ax = plt.subplot(projection=ss_br)
                     
@@ -1684,8 +1698,25 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
             pfss_time_arr = pfss_time_arr[np.argsort(pfss_time_arr)] #makes sure all the field lines are in proper order in time.
             pfss_polarity_arr = pfss_polarity_arr[np.argsort(pfss_time_arr)] 
             
-            
             fields_pol_non_nan = fields_polarity_no_sbs[~np.isnan(corrected_time)]
+            # breakpoint()
+            
+            plt.figure(figsize=(20,10))
+
+            ax1 = plt.subplot((211))
+            # Plot the polarity inversion line
+            ax1.plot(fields_pol_non_nan)
+            # ax.set_title('Source surface magnetic field, rss='+str(rss))
+            ax1.set_title('PFSS Polarity Comparisons, rss='+str(rss), fontsize=20)
+            
+            ax2 = plt.subplot((212))
+            
+            ax2.plot(pfss_polarity_arr)
+            # ax.set_xlim(-180,180)
+            
+            plt.show()
+            
+            
             
             where = np.where(pfss_polarity_arr==fields_pol_non_nan)
             where = where[0]
@@ -1693,26 +1724,6 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
             percent_same_pol = len(where)/len(fields_pol_non_nan)
             percent_polarity_accuracy.append(percent_same_pol)
             
-            
-            
-            
-            # fig = plt.figure(figsize=(17.5,7))
-            # ax1 = fig.add_subplot(211)
-            
-            # ax1.plot(fields_polarity_no_sbs,color='tab:blue',label='FIELDS polarity')
-            # ax1.set_title("FIELDS polarity vs PFSS predicted polarity, rss="+str(rss))
-            # plt.legend()
-            
-            # ax2 = fig.add_subplot(212)
-            
-            # ax2.plot(pfss_polarity_arr,color='tab:green',label='PFSS polarity')
-            
-            # plt.legend()
-             
-            # plt.show()
-            
-        
-        
         save_name = 'rss_vs_accuracy_enc_'+str(enc)+file_tag+'.csv'
         save_path = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/Rss vs Accuracy/'
         # Example 1D lists
@@ -1724,9 +1735,6 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
             writer = csv.writer(file)
             writer.writerows(zip(list1, list2))  # Write each pair as a row
 
-        
-        
-    # breakpoint()
     if test_plot:
         
         #----------------# PFSS FIELD MODEL FIGURE #----------------#
@@ -1734,7 +1742,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
         pfss_out = pfss.pfss(pfss_in)
 
         tracer = pfss.tracing.FortranTracer()
-        r = r_tmp * const.R_sun
+        r = rss * const.R_sun
         
         
         # r2 = (r_tmp-0.2)*const.R_sun
@@ -1800,11 +1808,6 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
         # for i in field_lines_tmp:
         field_lines_2_plot = field_lines_tmp[idx]
         
-            
-        # breakpoint()
-        # field_lines_2_plot = i
-        # field_lines_2_plot = np.append(field_lines_2_plot,field_lines2)
-        
         for field_line in field_lines_2_plot:
                 
             # if sub_ind in idx:
@@ -1816,10 +1819,6 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
                     coords.z / const.R_sun,
                     color=color, linewidth=1)
 
-        
-            # breakpoint()
-
-    
             #-----------------# PARKER SPIRAL FIGURE #------------------#
             
             # fig = plt.figure(figsize=(10,10))
@@ -1847,8 +1846,6 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
             ax2.plot(spiral_x,spiral_y,color=color)
             
             j+=1
-                
-        
         
         # Define circle parameters
         center_x, center_y = 0, 0  # Center of the circle
@@ -1870,7 +1867,6 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
         ax1.text2D(0.5,-0.08,"using HMI Synoptic Map",fontsize=20,transform=ax1.transAxes,horizontalalignment='center')
         # text2D(0.05, 0.95, "2D Text", transform=ax.transAxes
         
-    
         utils.set_axes_equal(ax1)
         
         # Make panes transparent
@@ -1944,14 +1940,13 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         wavelen=171
         sec = 12.
 
-
     #------------------------------ Set path to tplot and quiescent region files ----------------------------------#
 
     if tf==None:
         tf = pys.time_string(pys.time_float(t0)+86400)
 
     if enc != None:    
-        tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords.cdf'
+        tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords_hmi_rss_3_1.cdf'
         qregion_savename = 'enc_'+str(enc)+'_regions_raw.csv'
     else:
         tplot_savename = t0+'_'+tf+'_footpoint_coords.cdf'
@@ -1995,14 +1990,31 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
     
+    solar_lon_max_err_data = pyt.get_data('solar_lon_err_max')
+    # solar_lon_time = solar_lon_max_err_data[0]
+    sol_lon_max_err = solar_lon_max_err_data[1]
+    
+    solar_lon_min_err_data = pyt.get_data('solar_lon_err_min')
+    # solar_lon_time = solar_lon_max_err_data[0]
+    sol_lon_min_err = solar_lon_min_err_data[1]
+    
     sol_lat_data = pyt.get_data('solar_lat')
     # sol_lat_time = sol_lat_data[0]
     sol_lat = sol_lat_data[1]
+    
+    sol_lat_max_err_data = pyt.get_data('solar_lat_err_max')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat_max_err = sol_lat_max_err_data[1]
+    
+    sol_lat_min_err_data = pyt.get_data('solar_lat_err_min')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat_min_err = sol_lat_min_err_data[1]
     
     r0_Rs_data = pyt.get_data('PSP_Rs')
     r0_Rs_time = r0_Rs_data[0]
     r0_Rs = r0_Rs_data[1]
     
+    # breakpoint()
     
     exp_fact_data = pyt.get_data('expansion_factor')
     exp_fact = exp_fact_data[1]
@@ -2037,7 +2049,11 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     
     region_time = np.array([])
     region_foot_lon = np.array([])
+    region_foot_lon_max = np.array([])
+    region_foot_lon_min = np.array([])
     region_foot_lat = np.array([])
+    region_foot_lat_max = np.array([])
+    region_foot_lat_min = np.array([])
     region_exp_fact = np.array([])
     
     carr_lat_max = np.array([])
@@ -2045,10 +2061,10 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     carr_lon_max = np.array([])
     carr_lon_min = np.array([])
     
-    long_region_time = np.array([])
-    long_region_foot_lon = np.array([])
-    long_region_foot_lat = np.array([])
-    long_exp_fact = np.array([])
+    # long_region_time = np.array([])
+    # long_region_foot_lon = np.array([])
+    # long_region_foot_lat = np.array([])
+    # long_exp_fact = np.array([])
     
     q_index_arr = np.array([])
     
@@ -2063,12 +2079,21 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         
         region_time_tmp = solar_lon_time[point_where]
         region_foot_lon_tmp =  sol_lon[point_where]
+        region_foot_lon_tmp_max = sol_lon_max_err[point_where]
+        region_foot_lon_tmp_min = sol_lon_min_err[point_where]
         region_foot_lat_tmp = sol_lat[point_where]
+        region_foot_lat_tmp_max = sol_lat_max_err[point_where]
+        region_foot_lat_tmp_min = sol_lat_min_err[point_where]
         region_exp_tmp = exp_fact[point_where]
 
         region_time = np.append(region_time,region_time_tmp)
         region_foot_lon = np.append(region_foot_lon,region_foot_lon_tmp)
+        region_foot_lon_max = np.append(region_foot_lon_max,region_foot_lon_tmp_max)
+        region_foot_lon_min = np.append(region_foot_lon_min,region_foot_lon_tmp_min)
+        
         region_foot_lat = np.append(region_foot_lat,region_foot_lat_tmp)
+        region_foot_lat_max = np.append(region_foot_lat_max,region_foot_lat_tmp_max)
+        region_foot_lat_min = np.append(region_foot_lat_min,region_foot_lat_tmp_min)
         region_exp_fact = np.append(region_exp_fact,region_exp_tmp)
         
         if len(point_where) != 0:
@@ -2093,7 +2118,11 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
 
     non_q_time = solar_lon_time[non_q_index_arr]
     non_q_foot_lon = sol_lon[non_q_index_arr]
+    non_q_foot_lon_max = sol_lon_max_err[non_q_index_arr]
+    non_q_foot_lon_min = sol_lon_min_err[non_q_index_arr]
     non_q_foot_lat = sol_lat[non_q_index_arr]
+    non_q_foot_lat_max = sol_lat_max_err[non_q_index_arr]
+    non_q_foot_lat_min = sol_lat_min_err[non_q_index_arr]
     non_q_exp_fact = exp_fact[non_q_index_arr]
     
     # breakpoint()
@@ -2125,7 +2154,12 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         region_time = region_time # total time
         
         region_foot_lon = region_foot_lon
+        region_foot_lon_max = region_foot_lon_max
+        region_foot_lon_min = region_foot_lon_min
         region_foot_lat = region_foot_lat
+        region_foot_lat_max = region_foot_lat_max
+        region_foot_lat_min = region_foot_lat_min
+        
         region_exp_fact = region_exp_fact
         
         #---non-quiescent---#
@@ -2133,21 +2167,25 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         nq_tplot_time = non_q_time # non quiescent time
         
         nq_tplot_sol_lon = non_q_foot_lon
+        nq_tplot_sol_lon_max = non_q_foot_lon_max
+        nq_tplot_sol_lon_min = non_q_foot_lon_min
         nq_tplot_sol_lat = non_q_foot_lat
+        nq_tplot_sol_lat_max = non_q_foot_lat_max
+        nq_tplot_sol_lat_min = non_q_foot_lat_min
         nq_expansion = non_q_exp_fact
         
         #----long quiescent----#
         
-        long_tplot_time = long_region_time # non quiescent time
+        # long_tplot_time = long_region_time # non quiescent time
         
-        long_tplot_sol_lon = long_region_foot_lon
-        long_tplot_sol_lat = long_region_foot_lat
-        long_expansion = long_exp_fact
+        # long_tplot_sol_lon = long_region_foot_lon
+        # long_tplot_sol_lat = long_region_foot_lat
+        # long_expansion = long_exp_fact
         
         
         #---------tplot saves---------#
         
-        pyt.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #total solar longitude
+        pyt.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #all footpoint solar longitude
         pyt.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
         pyt.store_data("PSP_lon", data={'x':t_tplot_time, 'y':tplot_carr_lon})
         pyt.store_data("PSP_lat", data={'x':t_tplot_time, 'y':tplot_carr_lat})
@@ -2161,26 +2199,36 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         #--- quiescent ---#
         
         pyt.store_data("q_solar_lon", data={'x':region_time, 'y':region_foot_lon}) #quiescent solar longitude
+        pyt.store_data("q_solar_lon_max_err", data={'x':region_time, 'y':region_foot_lon_max})
+        pyt.store_data("q_solar_lon_min_err", data={'x':region_time, 'y':region_foot_lon_min})
         pyt.store_data("q_solar_lat", data={'x':region_time, 'y':region_foot_lat})
+        pyt.store_data("q_solar_lat_max_err", data={'x':region_time, 'y':region_foot_lat_max})
+        pyt.store_data("q_solar_lat_min_err", data={'x':region_time, 'y':region_foot_lat_min})
+        
         pyt.store_data("q_expansion_factor",data={'x':region_time, 'y':region_exp_fact})
         
         #---non quiescent---#
         
         pyt.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
+        pyt.store_data("nq_solar_lon_max_err", data={'x':region_time, 'y':nq_tplot_sol_lon_max})
+        pyt.store_data("nq_solar_lon_min_err", data={'x':region_time, 'y':nq_tplot_sol_lon_min})
         pyt.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
+        pyt.store_data("nq_solar_lat_max_err", data={'x':region_time, 'y':nq_tplot_sol_lat_max})
+        pyt.store_data("nq_solar_lat_min_err", data={'x':region_time, 'y':nq_tplot_sol_lat_min})
         pyt.store_data("nq_expansion_factor",data={'x':nq_tplot_time, 'y':nq_expansion})
         
-        #---long quiescent---#
+        # #---long quiescent---#
         
-        pyt.store_data("long_solar_lon", data={'x':long_tplot_time, 'y':long_tplot_sol_lon}) #non quiescent solar longitude
-        pyt.store_data("long_solar_lat", data={'x':long_tplot_time, 'y':long_tplot_sol_lat})
-        pyt.store_data("long_expansion_factor",data={'x':long_tplot_time, 'y':long_expansion})
+        # pyt.store_data("long_solar_lon", data={'x':long_tplot_time, 'y':long_tplot_sol_lon}) #non quiescent solar longitude
+        # pyt.store_data("long_solar_lat", data={'x':long_tplot_time, 'y':long_tplot_sol_lat})
+        # pyt.store_data("long_expansion_factor",data={'x':long_tplot_time, 'y':long_expansion})
         
         
     
         cdf_var_list = ["solar_lon","solar_lat","PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","polarity","expansion_factor",
-                        "q_solar_lon","q_solar_lat","q_expansion_factor","nq_solar_lon","nq_solar_lat","nq_expansion_factor",
-                        "long_solar_lon","long_solar_lat","long_expansion_factor"]
+                        "q_solar_lon","q_solar_lon_max_err","q_solar_lon_min_err","q_solar_lat","q_solar_lat_max_err","q_solar_lat_min_err","q_expansion_factor",
+                        "nq_solar_lon","nq_solar_lon_max_err","nq_solar_lon_min_err","nq_solar_lat",
+                        "nq_solar_lat_max_err","nq_solar_lat_min_err","nq_expansion_factor"]
         
         pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
     
@@ -2188,6 +2236,7 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     
     if plot:
         
+        # breakpoint()
         #------------------------------ Read in AIA Images ----------------------------------#
         
         """ Check to see if AIA file already exists. They are large files and the program runs slow if sunpy gets carried away."""
@@ -2233,10 +2282,9 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
             # aia_map.draw_grid(axes=axs)
             # pass
     
-    
         if zoom:
-            xlims_world = [-750, 0]*u.arcsec
-            ylims_world = [0, 600]*u.arcsec
+            xlims_world = [-300, 500]*u.arcsec
+            ylims_world = [-200, 600]*u.arcsec
     
             world_coords = SkyCoord(Tx=xlims_world, Ty=ylims_world, frame=aia_map.coordinate_frame)
             pixel_coords = aia_map.world_to_pixel(world_coords)
@@ -2247,15 +2295,32 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         else:
             xlims_world = [-1000, 1000]*u.arcsec
             ylims_world = [-700, 700]*u.arcsec
+            
+        # xlims_world = [-1000, 1000]*u.arcsec
+        # ylims_world = [-700, 700]*u.arcsec
         
     
         sol_coords = SkyCoord(sol_lon*u.deg, sol_lat*u.deg, frame=outmap.coordinate_frame)
         # carr_coords = SkyCoord(carr_lon*u.deg, carr_lat*u.deg, frame=aia_map.coordinate_frame)
         q_coords = SkyCoord(region_foot_lon*u.deg, region_foot_lat*u.deg, frame=outmap.coordinate_frame)
         
+        sol_coords_max = SkyCoord(sol_lon_max_err*u.deg, sol_lat_max_err*u.deg, frame=outmap.coordinate_frame)
+        # carr_coords = SkyCoord(carr_lon*u.deg, carr_lat*u.deg, frame=aia_map.coordinate_frame)
+        q_coords_max = SkyCoord(region_foot_lon_max*u.deg, region_foot_lat_max*u.deg, frame=outmap.coordinate_frame)
+        
+        sol_coords_min = SkyCoord(sol_lon_min_err*u.deg, sol_lat_min_err*u.deg, frame=outmap.coordinate_frame)
+        # carr_coords = SkyCoord(carr_lon*u.deg, carr_lat*u.deg, frame=aia_map.coordinate_frame)
+        q_coords_min = SkyCoord(region_foot_lon_min*u.deg, region_foot_lat_min*u.deg, frame=outmap.coordinate_frame)
+        
         
         sol_p = axs.plot_coord(sol_coords, '.', color="lime",markersize=10,label='PFSS Footpoints')
         q_p = axs.plot_coord(q_coords, 'v', color="magenta",markersize=10,label='Quiescent Region Footpoints')
+        
+        # sol_p = axs.plot_coord(sol_coords_max, '.', color="lime",markersize=10,label='PFSS Footpoints')
+        # q_p = axs.plot_coord(q_coords_max, 'v', color="magenta",markersize=10,label='Quiescent Region Footpoints')
+        
+        # sol_p = axs.plot_coord(sol_coords_min, '.', color="lime",markersize=10,label='PFSS Footpoints')
+        # q_p = axs.plot_coord(q_coords_min, 'v', color="magenta",markersize=10,label='Quiescent Region Footpoints')
         
         if region_labels:
             for i in range(len(carr_lat_max)):
@@ -2274,6 +2339,8 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
             axs.set_xlim(xlims_pixel)
         else:
             axs.set_title('PSP Footpoints on '+instr+' '+str(wavelen)+'Å Images, Encounter '+str(enc),fontsize=52)
+            
+        axs.set_title('PSP Footpoints on '+instr+' '+str(wavelen)+'Å Images, Encounter '+str(enc),fontsize=52)
         
         axs.set_ylabel("Helioprojective Lattitude (Solar-Y)",fontsize=60)
         axs.set_xlabel("Helioprojective Longitude (Solar-X)",fontsize=60)
@@ -2297,6 +2364,8 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         
         #-------------------------create supergranule overplot----------------------#
         
+        breakpoint()
+        
         zoom=True
         
         plt.figure(figsize=(25,20))
@@ -2313,7 +2382,7 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         elif plot_shape == 'circ':
         
             axs = plt.subplot(projection=reprojected_map)
-            reprojected_map.plot(clip_interval=(1, 99.99)*u.percent,cmap='binary') #cmap='binary',
+            reprojected_map.plot(clip_interval=(1, 99.99)*u.percent,cmap='binary_r') #cmap='binary',
         
         
         # if zoom:
@@ -2338,14 +2407,25 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
                                 obstime=reprojected_map.date,  # Use the observation time of the map
                                 observer="earth")  # Match the observer of the map)
         
-        # sol_coords_hp = sol_coords.transform_to("helioprojective")
-        # q_coords_hp = q_coords.transform_to("helioprojective")
-        
-        
-        # sol_p = axs.plot_coord(sol_coords_hp, 'o',mew=2, mfc='none', color="lime",markersize=20,label='Non-Quiescent Footpoints')
-        # q_p = axs.plot_coord(q_coords_hp, 'o',mew=4, mfc='none', color="magenta",markersize=20,label='Quiescent Region Footpoints')
-        
+        sol_coords_max = SkyCoord(sol_lon_max_err*u.deg, sol_lat_max_err*u.deg, frame="heliographic_carrington",
+                                obstime=reprojected_map.date,  # Use the observation time of the map
+                                observer="earth")  # Match the observer of the map)
 
+        q_coords_max = SkyCoord(region_foot_lon_max*u.deg, region_foot_lat_max*u.deg, frame="heliographic_carrington",
+                                obstime=reprojected_map.date,  # Use the observation time of the map
+                                observer="earth")  # Match the observer of the map)
+        
+        sol_coords_min = SkyCoord(sol_lon_min_err*u.deg, sol_lat_min_err*u.deg, frame="heliographic_carrington",
+                                obstime=reprojected_map.date,  # Use the observation time of the map
+                                observer="earth")  # Match the observer of the map)
+
+        q_coords_min = SkyCoord(region_foot_lon_min*u.deg, region_foot_lat_min*u.deg, frame="heliographic_carrington",
+                                obstime=reprojected_map.date,  # Use the observation time of the map
+                                observer="earth")  # Match the observer of the map)
+        
+        
+        sol_coords = sol_coords
+        q_coords = q_coords
 
         axs.set_title('Supergranulation Lanes',fontsize=65)
         
@@ -2362,6 +2442,19 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         lat_min = lat_min * u.deg
         lat_max = lat_max * u.deg
         
+        # Define the corner coordinates of the map bounds
+        bounds_coords = SkyCoord([lon_min, lon_max], [lat_min, lat_max], 
+                                 frame="heliographic_carrington", 
+                                 obstime=reprojected_map.date, 
+                                 observer="earth")
+        
+        # Convert to pixel coordinates
+        bounds_pixel = reprojected_map.world_to_pixel(bounds_coords)
+        
+        # Extract pixel limits
+        x_pixel_min, x_pixel_max = bounds_pixel.x.value[0], bounds_pixel.x.value[1]
+        y_pixel_min, y_pixel_max = bounds_pixel.y.value[0], bounds_pixel.y.value[1]
+        
         # Wrap longitudes around 0–360 degrees if necessary
         data_coords_lon = sol_coords.lon.wrap_at(360 * u.deg)
         q_data_coords_lon = q_coords.lon.wrap_at(360 * u.deg)
@@ -2377,32 +2470,75 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         mask = lon_mask & lat_mask
         q_mask = q_lon_mask & q_lat_mask
         
-        # Filter the SkyCoord object
+        # Filter all SkyCoord objects
         sol_filtered_coords = sol_coords[mask]
-        q_filtered_coords = q_coords[q_mask]
+        sol_filtered_coords_max = sol_coords_max[mask]
+        sol_filtered_coords_min = sol_coords_min[mask]
         
-        sol_p = axs.plot_coord(sol_filtered_coords, 'o',mew=2, mfc='none', color="lime",markersize=20,label='Non-Quiescent Footpoints')
-        q_p = axs.plot_coord(q_filtered_coords, 'o',mew=4, mfc='none', color="magenta",markersize=20,label='Quiescent Region Footpoints')
+        q_filtered_coords = q_coords[q_mask]
+        q_filtered_coords_max = q_coords_max[q_mask]
+        q_filtered_coords_min = q_coords_min[q_mask]
+        
+        # Convert filtered coordinates to pixel space
+        sol_pixel_coords = reprojected_map.world_to_pixel(sol_filtered_coords)
+        sol_pixel_coords_max = reprojected_map.world_to_pixel(sol_filtered_coords_max)
+        sol_pixel_coords_min = reprojected_map.world_to_pixel(sol_filtered_coords_min)
+        
+        q_pixel_coords = reprojected_map.world_to_pixel(q_filtered_coords)
+        q_pixel_coords_max = reprojected_map.world_to_pixel(q_filtered_coords_max)
+        q_pixel_coords_min = reprojected_map.world_to_pixel(q_filtered_coords_min)
 
-        # # Set limits using WCSAxes world coordinates
-        # axs.set_xlim([lon_min, lon_max])
-        # axs.set_ylim([lat_min, lat_max])
-            
-        # axs.set_ylabel("Helioprojective Lattitude (Solar-Y)",fontsize=60)
-        # axs.set_xlabel("Helioprojective Longitude (Solar-X)",fontsize=60)
+        # Compute errors in pixel space
+        sol_x_err_plus = abs(sol_pixel_coords_max.x - sol_pixel_coords.x)
+        sol_x_err_minus = abs(sol_pixel_coords.x - sol_pixel_coords_min.x)
+        sol_y_err_plus = abs(sol_pixel_coords_max.y - sol_pixel_coords.y)
+        sol_y_err_minus = abs(sol_pixel_coords.y - sol_pixel_coords_min.y)
+        
+        q_x_err_plus = abs(q_pixel_coords_max.x - q_pixel_coords.x)
+        q_x_err_minus = abs(q_pixel_coords.x - q_pixel_coords_min.x)
+        q_y_err_plus = abs(q_pixel_coords_max.y - q_pixel_coords.y)
+        q_y_err_minus = abs(q_pixel_coords.y - q_pixel_coords_min.y)
+        
+        # Plot using error bars in pixel coordinates
+        axs.errorbar(sol_pixel_coords.x.value, sol_pixel_coords.y.value,
+                      xerr=[sol_x_err_minus.value, sol_x_err_plus.value],
+                      yerr=[sol_y_err_minus.value, sol_y_err_plus.value],
+                      fmt='o', label='Non-Quiescent Footpoints', color="limegreen",
+                      markersize=10,         # Bigger markers
+                      markeredgewidth=4,     # Thicker marker edges (slightly thicker than lime)
+                      elinewidth=3,          # Thicker error bar lines
+                      capsize=5,             # Size of error bar caps
+                      capthick=2)            # Thickness of error bar caps
+    
+        axs.errorbar(q_pixel_coords.x.value, q_pixel_coords.y.value,
+                      xerr=[q_x_err_minus.value, q_x_err_plus.value],
+                      yerr=[q_y_err_minus.value, q_y_err_plus.value],
+                      fmt='o', label='Quiescent Region Footpoints', color="magenta",
+                      markersize=10,         # Bigger markers
+                      markeredgewidth=4,     # Thicker marker edges (slightly thicker than lime)
+                      elinewidth=2,          # Thicker error bar lines
+                      capsize=5,             # Size of error bar caps
+                      capthick=2)            # Thickness of error bar caps
+        
+        # sol_p = axs.plot_coord(sol_filtered_coords, 'o',mew=2, mfc='none', color="lime",markersize=20,label='Non-Quiescent Footpoints')
+        # q_p = axs.plot_coord(q_filtered_coords, 'o',mew=4, mfc='none', color="magenta",markersize=20,label='Quiescent Region Footpoints')
         
         axs.set_ylabel("Carrington Latitude",fontsize=60)
         axs.set_xlabel("Carrington Longitude",fontsize=60)
 
         axs.tick_params(axis='both', which='major', labelsize=60)
         
-        handles, labels = axs.get_legend_handles_labels()
-        handler_map = {type(sol_p): MarkerSizeHandler() for sol_p in handles}
-        leg = axs.legend(handles, labels, handler_map=handler_map,fontsize=40,loc='lower right')
+        axs.set_xlim(x_pixel_min, x_pixel_max)
+        axs.set_ylim(y_pixel_min, y_pixel_max)
+
+        # handles, labels = axs.get_legend_handles_labels()
+        # handler_map = {type(sol_p): MarkerSizeHandler() for sol_p in handles}
+        # leg = axs.legend(handles, labels, handler_map=handler_map,fontsize=40,loc='lower right')
+        leg = plt.legend(fontsize=40,loc='lower left')
         
     
-        leg.legend_handles[0].set_color('lime')
-        leg.legend_handles[1].set_color('magenta')
+        # leg.legend_handles[0].set_color('lime')
+        # leg.legend_handles[1].set_color('magenta')
         
         plt.show()
        
@@ -2576,12 +2712,11 @@ def expansion_analysis(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=T
     plt.show()
 
 def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=False,save=False,
-                               rlim=60,good_angle=60,wavelen=171,plot_shape='circ',inst='aia',time_corr='parker',V_err=0.04):
+                               rlim=60,good_angle=60,wavelen=171,plot_shape='circ',inst='aia',time_corr='parker',model='iso',V_err=0.04):
     
     if enc is not None:
         
         t0,tf = utils.encounter_dates(enc,rlim)
-    
     
     if tf==None:
         tf = pys.time_string(pys.time_float(t0)+86400)
@@ -2604,6 +2739,7 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
     # breakpoint()
     
     PSP_pos_data = pyt.get_data('PSP_Rs')
+    PSP_Rs_time = PSP_pos_data[0]
     PSP_Rs = PSP_pos_data[1]*u.solRad
     
     rss_data = pyt.get_data('rss')
@@ -2753,39 +2889,52 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         sys.path.append('/Users/besh2109/GitHub/psp_python')
         # T0_fitted_slow = fit_T0(r_obs, v_obs)
         
-        fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_data.cdf'
+        fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_'+model+'.cdf'
         fit_T0_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fit_T0/'
         
         if os.path.exists(fit_T0_savepath+fit_T0_savename):
             print(f"The file {fit_T0_savename} exists.")
             pyt.tplot_restore(fit_T0_savepath+fit_T0_savename)
             
-            T0_data = pyt.get_data('T0_coronal_temp_fit')
+            T0_data = pyt.get_data(model+'_T0_coronal_temp_fit')
+            T0_fitted_time = T0_data[0]
             T0_fitted = T0_data[1]
             
-            T0_max_data = pyt.get_data('T0_coronal_temp_fit_max')
+            T0_max_data = pyt.get_data(model+'_T0_coronal_temp_fit_max_err')
+            T0_max_fitted_time = T0_max_data[0]
             T0_max_fitted = T0_max_data[1]
             
-            T0_min_data = pyt.get_data('T0_coronal_temp_fit_min')
+            T0_min_data = pyt.get_data(model+'_T0_coronal_temp_fit_min_err')
+            T0_min_fitted_time = T0_min_data[0]
             T0_min_fitted = T0_min_data[1]
+            
+            interp_T0 = interp1d(T0_fitted_time, T0_fitted, bounds_error=False, fill_value="extrapolate")
+            interp_T0_max = interp1d(T0_max_fitted_time, T0_max_fitted, bounds_error=False, fill_value="extrapolate")
+            interp_T0_min = interp1d(T0_min_fitted_time, T0_min_fitted, bounds_error=False, fill_value="extrapolate")
+            
+            # Interpolate the arrays onto the PSP_Rs grid
+            T0_fitted = interp_T0(PSP_Rs_time)
+            T0_max_fitted = interp_T0_max(PSP_Rs_time)
+            T0_min_fitted = interp_T0_min(PSP_Rs_time)
+
             
         else:
             print(f"The file {fit_T0_savename} does not exist.")
             
             T0_fitted = utils.fit_T0_parallel(r_obs, v_obs)
-            pyt.store_data("T0_coronal_temp_fit", data={'x':lat_time, 'y':T0_fitted})
+            pyt.store_data(model+"_T0_coronal_temp_fit", data={'x':lat_time, 'y':T0_fitted})
             
             T0_max_fitted = utils.fit_T0_parallel(r_obs, v_max_err)
-            pyt.store_data("T0_coronal_temp_fit_max", data={'x':lat_time, 'y':T0_max_fitted})
+            pyt.store_data(model+"_T0_coronal_temp_fit_max_err", data={'x':lat_time, 'y':T0_max_fitted})
             
             T0_min_fitted = utils.fit_T0_parallel(r_obs, v_min_err)
-            pyt.store_data("T0_coronal_temp_fit_min", data={'x':lat_time, 'y':T0_min_fitted})
+            pyt.store_data(model+"_T0_coronal_temp_fit_min_err", data={'x':lat_time, 'y':T0_min_fitted})
             
-            cdf_var = ["T0_coronal_temp_fit","T0_coronal_temp_fit_max","T0_coronal_temp_fit_min"]
+            cdf_var = [model+"_T0_coronal_temp_fit",model+"_T0_coronal_temp_fit_max_err",model+"_T0_coronal_temp_fit_min_err"]
             
             pyt.tplot_save(cdf_var,fit_T0_savepath+fit_T0_savename)
             
-        
+        # breakpoint()
         #------------Assign a launch velocity to each temperature---------------#
         
         T0_min, T0_max = np.min(T0_fitted), 2     # Input range (original T0_fitted temperatures in MK)
@@ -2826,7 +2975,14 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         time_of_flight_max = []
         time_of_flight_min = []
         for i in range(len(PSP_Rs)):
-
+            
+            # Calculate the percentage completion
+            percent = (i + 1) / len(PSP_Rs) * 100  # i + 1 to start from 1 instead of 0
+            
+            # Print every 5% (check if percent is a multiple of 5)
+            if percent % 5 == 0:
+                print(f"Progress: {percent:.0f}% complete")
+            
             Rgrid = np.linspace(1,70,2000)*u.R_sun
             T0 = T0_fitted[i]*u.MK
             sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_isothermal(Rgrid,T0)
@@ -3146,7 +3302,7 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
                 
             with open(csv_save_path+csv_save_name, mode='w', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerows(zip(q_starts, q_ends,q_sdo_start,q_sdo_start_max_err,q_sdo_start_min_err,q_sdo_end,q_sdo_end_max_err,q_sdo_end_min_err,q_lat_start,q_lat_end,q_lon_start,q_lon_end))  # Write each pair as a row
+                writer.writerows(zip(q_starts, q_ends,q_sdo_start,q_sdo_end,q_sdo_start_max_err,q_sdo_end_max_err,q_sdo_start_min_err,q_sdo_end_min_err,q_lat_start,q_lat_end,q_lon_start,q_lon_end))  # Write each pair as a row
         
         
 
@@ -3700,11 +3856,11 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=F
     
     
     
-    array, _ = reproject_and_coadd(maps, out_wcs, shape,
-                               input_weights=weights,
-                               reproject_function=reproject_interp,
-                               match_background=True,
-                               background_reference=0)
+    # array, _ = reproject_and_coadd(maps, out_wcs, shape,
+    #                            input_weights=weights,
+    #                            reproject_function=reproject_interp,
+    #                            match_background=True,
+    #                            background_reference=0)
     
     outmap = sunpy.map.Map((array, header))
     # outmap.plot_settings['norm'].vmin = -100
@@ -3852,3 +4008,922 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=F
                 plt.close('all')
                 plt.close(fig)
                 
+def footpoint_velocity(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rlim=65,return_nums=False):
+    
+    #read in PSP and footpoint data
+    timestamps, longitudes, latitudes = utils.read_in_footpoints(t0,tf,enc,save)
+    
+    if enc != None:    
+        qregion_savename = 'enc_'+str(enc)+'_regions_raw.csv'
+    else:
+        qregion_savename = t0+'_'+tf+'_regions_raw.csv'
+    
+    # Step 1: Convert to radians
+    lat_rad = Angle(latitudes * u.deg).rad
+    lon_rad = Angle(longitudes * u.deg).rad
+    
+    # Step 2: Compute differences
+    dlat = np.diff(lat_rad)  # Latitude differences
+    dlon = np.diff(lon_rad)  # Longitude differences
+    
+    # Step 3: Haversine formula for distance
+    a = (np.sin(dlat / 2))**2 + np.cos(lat_rad[:-1]) * np.cos(lat_rad[1:]) * (np.sin(dlon / 2))**2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    R_sun = const.R_sun.to(u.km) # Solar radius in km
+    distances = R_sun * c  # Distances in km
+    
+    # Step 4: Convert timestamps to seconds and compute differences
+    time_seconds = timestamps
+    dt = np.diff(time_seconds)*u.s  # Time differences in seconds
+    
+    # Step 5: Calculate velocity
+    velocities_arr = distances / dt  # Velocity in km/s
+    velocities = velocities_arr.to(u.Mm / u.s)  # Ensure units
+    
+    # Length of the original time array
+    n = len(timestamps)
+    
+    # X-coordinates for the diff array (midpoints of time_arr)
+    vel_times = (timestamps[:-1] + timestamps[1:]) / 2  # Midpoints: [0.5, 1.5, 2.5, 3.5]
+    
+    # X-coordinates to interpolate to (full time_arr)
+    x_interp = timestamps
+    
+    # Interpolate new_arr to match the length of time_arr
+    vel_interp = np.interp(x_interp, vel_times, velocities.value)
+    
+    qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    
+    #---------------------------- Read in quiescent regions --------------------------------#
+    
+    # breakpoint()
+    
+    qregion_df = pd.read_csv(qregion_savepath+qregion_savename)
+    qregion_array = qregion_df.to_numpy()
+    
+    if enc != None:    
+        regions_arr = qregion_array
+        
+    else:
+        
+        pre_flt = qregion_array[:,:2]
+        
+        qregion_lst = []
+        for j in pre_flt:
+            qregion_lst.append(pys.time_float(j))
+        qregion_flt = np.array(qregion_lst) 
+        reg_where = np.where((qregion_flt[:,0]>timestamps[0])&(qregion_flt[:,1]<timestamps[-1]))
+        
+        regions_arr = qregion_array[reg_where,:]
+        
+    q_durations = regions_arr[:,2]
+    
+    mean_q_vel = np.array([])
+    med_q_vel = np.array([])
+    q_vel = np.array([])
+    nq_vel = np.array([])
+    ind_arr = np.array([])
+    for k in regions_arr:
+        
+        reg_start = pys.time_float(k[0])
+        reg_end = pys.time_float(k[1])
+        
+        speed_where = np.where((timestamps>reg_start)&(timestamps<reg_end))
+        
+        q_vel = np.append(q_vel,vel_interp[speed_where[0]])
+        ind_arr = np.append(ind_arr,speed_where[0])
+        mean_q_vel = np.append(mean_q_vel,np.nanmean(vel_interp[speed_where]))
+        med_q_vel = np.append(med_q_vel,np.nanmedian(vel_interp[speed_where]))
+    
+    # After the loop, compute nq_vel as the complement of q_vel
+    ind_arr = ind_arr.astype(int)  # Ensure indices are integers
+    all_indices = np.arange(len(vel_interp))  # Array of all possible indices
+    nq_vel = vel_interp[~np.isin(all_indices, ind_arr)]  # Elements not in ind_arr
+# 
+    # breakpoint()
+    
+    if plot:
+        HIST_BINS = np.linspace(0, 0.10, 100)
+        
+        # Histogram our data with numpy.
+        counts, bins = np.histogram(vel_interp, HIST_BINS)
+        
+        fig = plt.figure(figsize=(15,8))
+        ax = fig.add_subplot(111)
+        
+        mean_vel = round(np.mean(vel_interp),3)*u.Mm/u.s
+        median_vel = round(np.median(vel_interp),3)*u.Mm/u.s
+        
+        ax.stairs(counts, bins)
+        ax.text(0.06, 200, f"Average Footpoint Velocity: {mean_vel}", fontsize=18, color='black', ha='center')
+        ax.text(0.06, 150, f"Median Footpoint Velocity: {median_vel}", fontsize=18, color='black', ha='center')
+        ax.set_xlabel('PSP Footpoint Velocity (Mm/s)',fontsize=15)
+        ax.set_ylabel('Counts',fontsize=15)
+        ax.set_title('Velocity of PFSS Footpoints across the Solar Surface',fontsize=18)
+        
+        plt.show()
+        
+        
+        
+        fig = plt.figure(figsize=(30,15))
+        # axs = fig.add_subplot(1,1,1)
+        # print(j+k+1)
+        # index = n_types*j+1+k
+        # if k ==0:
+        axs = fig.add_subplot(111)
+        # axs = fig.add_subplot(n_rads,1,j+1)
+        axs.set_title("Footpoint Velocity Histograms",fontsize=38)
+        axs.set_ylabel('Counts',fontsize=38)
+        axs.set_xlabel('Footpoint Velocity',fontsize=38)
+        
+        bins = np.linspace(0,0.05,20)
+        hist1, _ = np.histogram(q_vel, bins=bins)
+        hist2, _ = np.histogram(nq_vel, bins=bins)
+        
+        hist1_norm = hist1 / np.sum(hist1)
+        hist2_norm = hist2 / np.sum(hist2)
+        
+        # hist1_norm = hist1
+        # hist2_norm = hist2
+        
+        q_mean = np.nanmean(q_vel)
+        q_std = np.nanstd(q_vel)
+        q_median = np.nanmedian(q_vel)
+        non_q_mean = np.nanmean(nq_vel)
+        non_q_std = np.nanstd(nq_vel)
+        non_q_median = np.nanmedian(nq_vel)
+    
+        
+        # Calculate error bars for each bin (normalized)
+        error1 = np.sqrt(hist1) / np.sum(hist1)
+        error2 = np.sqrt(hist2) / np.sum(hist2)
+        
+        # error1 = np.sqrt(hist1) 
+        # error2 = np.sqrt(hist2) 
+        
+        # Plot histograms with error bars
+        axs.bar(bins[:-1], hist1_norm, width=np.diff(bins), align='center', alpha=0.5, label="Quiescent Footpoint Velocity",edgecolor='black')
+        axs.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5, label="Non-Quiescent Footpoint Velocity",edgecolor='black')
+        axs.errorbar(bins[:-1], hist1_norm, yerr=error1, fmt='none', color='k', capsize=3)
+        axs.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
+        
+        axs.tick_params(axis='both', which='major', labelsize=34)
+        leg = axs.legend(fontsize=30,loc='upper right',markerscale=5)
+        
+        # axs.text(0.4,75,'Quiescent Mean: '+str(round(q_mean,2))+' ± '+str(round(q_std,2)),fontsize=30)
+        # axs.text(0.4,75,'Quiescent Median: '+str(round(q_median,3)),fontsize=22)
+        # axs.text(0.4,70,'Non-Quiescent Mean: '+str(round(non_q_mean,1))+' ± '+str(round(non_q_std,1)),fontsize=30)
+        # axs.text(0.4,65,'Non-Quiescent Median: '+str(round(non_q_median,3)),fontsize=22)
+        
+        plt.show()
+        
+        
+        
+        
+        
+        fig = plt.figure(figsize=(15,8))
+        ax = fig.add_subplot(111)
+        
+        ax.scatter(q_durations,mean_q_vel,color='tab:blue',label='Mean Footpoint Velocity')
+        ax.scatter(q_durations,med_q_vel,color='blue',label='Median Footpoint Velocity')
+        
+        ax.set_ylabel('PSP Footpoint Velocity (Mm/s)',fontsize=15)
+        ax.set_xlabel('Quiescent Region Durations',fontsize=15)
+        ax.set_title('Footpoint Velocity vs Quiescent Regions Duration',fontsize=18)
+        
+        ax.set_ylim(0,0.03)
+        plt.legend()
+        plt.show()
+        
+        
+    if save:
+        tplot_savename = 'Enc_'+str(enc)+'_'
+        
+        pyt.store_data('footpoint_velocity',{'x':timestamps,'y':vel_interp})
+        
+    if return_nums:
+        return q_durations, mean_q_vel, med_q_vel, q_vel, nq_vel
+        
+def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rlim=55, V_err=0.04,model='iso'):
+    
+    Rs_km = 6.957e5*u.km #solar radius in km  
+    
+    JtoeV = 6.242*(10**18) # one joule equals 6.242*10^18 eV
+    
+    mp = 1.67262192*(10**(-27)) # mass of proton in kg
+    
+    if enc is not None:
+        
+        t0,tf = utils.encounter_dates(enc,rlim)
+    
+    if tf==None:
+        tf = pys.time_string(pys.time_float(t0)+86400)
+        
+    if enc == None:
+        enc = utils.encounter_check(t0)
+    
+    #------position data importing------#
+
+    psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
+    pos_data = pyt.get_data('position')
+    
+    pos_time_arr = pos_data[0]
+    pos_data_arr = pos_data[1]
+    
+    x = pos_data_arr[:,0]*u.km
+    y = pos_data_arr[:,1]*u.km
+    z = pos_data_arr[:,2]*u.km
+    
+    r0_time = pos_time_arr*u.s
+
+    r0 = np.sqrt(x**2+y**2+z**2) #parker solar probe position height in kilometers
+    r0_Rs = np.sqrt(x**2+y**2+z**2)/Rs_km*u.R_sun #height from center of sun in Solar Radii
+    
+    pos_len = len(pos_time_arr)
+    
+    #----SPC velocity data importing-----#  
+    
+    psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
+        
+    spc_data = pyt.get_data('psp_spc_vp_fit_RTN')
+    
+    if spc_data == None:
+        spc_data = pyt.get_data('spp_spc_vp_fit_RTN')
+
+    spc_time_arr = spc_data[0]
+    spc_data_arr = spc_data[1]
+
+    vr_spc = spc_data_arr[:,0]
+    
+    vr_spc_clean = utils.sliding_median(vr_spc,275)
+
+    interpolating_func = interp1d(spc_time_arr, vr_spc_clean, kind='linear', fill_value='extrapolate')
+    
+    # Create a new array of time values with fixed cadence
+    spc_time_down = np.arange(spc_time_arr[0], spc_time_arr[-1], 3)
+
+    # Interpolate arr_two to the new time values
+    spc_v_down = interpolating_func(spc_time_down)
+    
+    spc_time_arr = spc_time_down
+    vr_spc = spc_v_down
+    
+    spc_temp_data = pyt.get_data('psp_spc_wp1_fit')
+    
+    spc_temp_time_arr = spc_temp_data[0]
+    spc_temp_data_arr = spc_temp_data[1]
+    
+    temp_spc_ev = ((1/2)*JtoeV*mp*spc_temp_data_arr**2)*(10**6) # should return the temperature of the protons in eV
+    
+    tp_spc_clean = utils.sliding_median(temp_spc_ev,275)
+    
+    interpolating_func = interp1d(spc_temp_time_arr, tp_spc_clean, kind='linear', fill_value='extrapolate')
+    
+    # Create a new array of time values with fixed cadence
+    spc_time_down = np.arange(spc_temp_time_arr[0], spc_temp_time_arr[-1], 3)
+
+    # Interpolate arr_two to the new time values
+    spc_tp_down = interpolating_func(spc_time_down)
+    
+    tp_spc = spc_tp_down
+    
+    #------SPI velocity data importing------# 
+    
+    psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
+
+    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    
+    spi_time_arr = vel_data[0]
+    spi_data_arr = vel_data[1]
+    
+    vr_spi = spi_data_arr[:,0]
+    
+    temp_data = pyt.get_data('psp_spi_TEMP')
+    
+    spi_temp_data_arr = temp_data[1]
+    
+    tp_spi = spi_temp_data_arr
+    
+    #---------------handling velocity data for Parker Spiral------------------#
+    
+    hyb_time_vr, hyb_vr = utils.SPC_SPI_Construct(enc,spi_time_arr,vr_spi,spc_time_down,vr_spc) #hybrid (hyb) velocity arrays
+    
+    hyb_time_vr = np.array(hyb_time_vr)*u.s
+    
+    Vsw = hyb_vr*u.km/u.s
+    Vsw_Rs = ((hyb_vr*u.km/u.s)/Rs_km)*u.R_sun
+
+    Vsw_err_max = Vsw * (1+V_err)
+    Vsw_err_min = Vsw * (1-V_err)
+    
+    #---------------handling temperature data------------------#
+    
+    hyb_time_Tp, hyb_Tp = utils.SPC_SPI_Construct(enc,spi_time_arr,tp_spi,spc_time_arr,tp_spc) #hybrid (hyb) temperature arrays
+    
+    hyb_time_Tp = np.array(hyb_time_Tp)*u.s
+    
+    Tp = hyb_Tp*u.eV
+
+    #---interpolate the position data up to velocity data rates---#
+    
+    r0_Rs_i = np.interp(hyb_time_vr,r0_time,r0_Rs)
+    r0_i = np.interp(hyb_time_vr,r0_time,r0)
+    
+    Tp_i = np.interp(hyb_time_vr,hyb_time_Tp,hyb_Tp)
+    
+    r0_time_arr = np.array(hyb_time_vr)
+    r0 = np.array(r0_i)
+    r0_Rs = np.array(r0_Rs_i)
+
+    Tp = np.array(Tp_i)
+    
+    #---------------downsample the data----------------#
+    
+    low_res_times = np.linspace(pos_time_arr[0], pos_time_arr[-1], num=5000)
+    
+    r0_Rs_i = np.interp(low_res_times,r0_time_arr,r0_Rs)
+    r0_i = np.interp(low_res_times,r0_time_arr,r0)
+    
+    Vsw_i = np.interp(low_res_times,r0_time_arr,Vsw)
+    Vsw_Rs_i = np.interp(low_res_times,r0_time_arr,Vsw_Rs)
+    Vsw_max_i = np.interp(low_res_times,r0_time_arr,Vsw_err_max)
+    Vsw_min_i = np.interp(low_res_times,r0_time_arr,Vsw_err_min)
+    
+    
+    Tp_i = np.interp(low_res_times,r0_time_arr,Tp)
+    
+    r0_time_arr = low_res_times
+    r0 = r0_i
+    r0_Rs = r0_Rs_i
+    
+    Vsw = Vsw_i
+    Vsw_Rs = Vsw_Rs_i
+    Vsw_max_err = Vsw_max_i
+    Vsw_min_err = Vsw_min_i
+    
+    v_max_err = Vsw_max_err.to(u.km/u.s)
+    v_min_err = Vsw_min_err.to(u.km/u.s)
+    
+    r_obs = r0_Rs*u.R_sun
+    v_obs = Vsw
+    T_obs = Tp_i*u.eV/const.k_B.to(u.eV/u.MK) # should now be in Kelvin
+    
+    # breakpoint()
+    
+    gamma = 1.43
+    gamma_err = 0.045
+    gamma_max = gamma + gamma_err
+    gamma_min = gamma - gamma_err
+    
+    #---------------------------------------#
+    fit_T0_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fit_T0/'
+    sys.path.append('/Users/besh2109/GitHub/psp_python')
+    
+    if model=='iso':
+    
+        fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_iso.cdf'
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_obs,T_obs,gamma,model)
+        pyt.store_data("iso_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("iso_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_max_err,T_obs,gamma,model)
+        pyt.store_data("iso_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("iso_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_min_err,T_obs,gamma,model)
+        pyt.store_data("iso_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("iso_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
+              
+        pyt.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
+        pyt.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
+        pyt.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
+        
+        cdf_var = ["iso_T0_coronal_temp_fit","iso_T0_coronal_temp_fit_max_err","iso_T0_coronal_temp_fit_min_err",
+                   "iso_r2_scores","iso_r2_scores_max_err","iso_r2_scores_min_err",
+                   "PSP_Rs","Vsw_km","Tp_MK"]
+        
+    if model=='poly':
+    
+        fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_poly.cdf'
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_obs,T_obs,gamma,model)
+        pyt.store_data("poly_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("poly_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_max_err,T_obs,gamma_max,model)
+        pyt.store_data("poly_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("poly_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_min_err,T_obs,gamma_min,model)
+        pyt.store_data("poly_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("poly_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        
+        pyt.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
+        pyt.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
+        pyt.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
+        
+        cdf_var = ["poly_T0_coronal_temp_fit","poly_T0_coronal_temp_fit_max_err","poly_T0_coronal_temp_fit_min_err"
+                   "poly_r2_scores","poly_r2_scores_max_err","poly_r2_scores_min_err",
+                   "PSP_Rs","Vsw_km","Tp_MK"]
+    
+        
+    if model=='isolayer':
+        # breakpoint()
+        fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_isolayer.cdf'
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_obs,T_obs,gamma,model)
+        # T0_fitted,r2_fitted = utils.fit_T0_sequential(r_obs, v_obs,T_obs,gamma,model)
+        pyt.store_data("isolayer_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("isolayer_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
+        
+        K = T_obs/(r_obs**(-(2*(gamma-1))))
+        r_iso_fitted = (T0_fitted/K)**(-1/(2*(gamma-1)))
+        pyt.store_data("isothermal_layer_height", data={'x':r0_time_arr, 'y':r_iso_fitted})
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_max_err,T_obs,gamma_max,model)
+        pyt.store_data("isolayer_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("isolayer_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        K = T_obs/(r_obs**(-(2*(gamma_max-1))))
+        r_iso_fitted = (T0_fitted/K)**(-1/(2*(gamma_max-1)))
+        pyt.store_data("isothermal_layer_height_max_err", data={'x':r0_time_arr, 'y':r_iso_fitted})
+
+        
+        T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_min_err,T_obs,gamma_min,model)
+        pyt.store_data("isolayer_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pyt.store_data("isolayer_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        K = T_obs/(r_obs**(-(2*(gamma-1))))
+        r_iso_fitted = (T0_fitted/K)**(-1/(2*(gamma_min-1)))
+        pyt.store_data("isothermal_layer_height_min_err", data={'x':r0_time_arr, 'y':r_iso_fitted})
+
+        pyt.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
+        pyt.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
+        pyt.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
+        
+        cdf_var = ["isolayer_T0_coronal_temp_fit","isolayer_T0_coronal_temp_fit_max_err","isolayer_T0_coronal_temp_fit_min_err",
+                   "isothermal_layer_height","isothermal_layer_height_max_err","isothermal_layer_height_min_err",
+                   "isolayer_r2_scores","isolayer_r2_scores_max_err","isolayer_r2_scores_min_err",
+                   "PSP_Rs","Vsw_km","Tp_MK"]
+    
+        
+    pyt.tplot_save(cdf_var,fit_T0_savepath+fit_T0_savename)
+    
+def parker_solution_plot(enc,model='iso',save=True,err=None):
+    
+    #------------------------------ Set path to tplot and quiescent region files ----------------------------------#
+
+    tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords_hmi_rss_3_1.cdf'
+        
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
+    #------------------------------ Read in Tplot Variables ----------------------------------#
+    
+    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    
+    
+    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_time = solar_lon_data[0]
+    sol_lon = solar_lon_data[1]
+
+    
+    sol_lat_data = pyt.get_data('solar_lat')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat = sol_lat_data[1]
+    
+    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_time = r0_Rs_data[0]
+    r0_Rs = r0_Rs_data[1]
+    
+    #read in PSP fit and other data
+    parker_dict = utils.read_in_parker_fits(enc,model)
+    
+    # Loop through the dictionary and create global variables
+    for var_name, (time_array, data_array) in parker_dict.items():
+        # Create unique variable names for time and data
+        time_var_name = f"{var_name}_time"
+        data_var_name = f"{var_name}_data"
+        
+        # Assign to global namespace
+        globals()[time_var_name] = time_array
+        globals()[data_var_name] = data_array
+        
+        # # Optional: Print to confirm
+        # print(f"Created global variable {time_var_name} with shape {time_array.shape}")
+        # print(f"Created global variable {data_var_name} with shape {data_array.shape}")
+
+    
+    T0_fitted = iso_T0_coronal_temp_fit_data # noqa: F821
+    T0_time = iso_T0_coronal_temp_fit_time # noqa: F821
+    T0_len = len(iso_T0_coronal_temp_fit_data) # noqa: F821
+    
+    PSP_Rs = PSP_Rs_data*u.R_sun # noqa: F821
+    Vsw_km = Vsw_km_data*u.km/u.s # noqa: F821
+    
+    q_region_time, non_q_time, q_indices = utils.find_quiescent_points(enc,T0_time)
+    
+    rangex = random.sample(range(0,T0_len-1), 20)
+    
+    # Target time array (solar_lon_time has 4995 elements)
+    target_time = solar_lon_time
+    target_length = len(target_time)
+    
+    # Original time array (T0_time has 5000 elements)
+    original_time = T0_time
+    
+    # Downsample T0_fitted
+    T0_fitted_down = np.interp(target_time, original_time, T0_fitted)
+    
+    # Downsample PSP_Rs (strip units for interpolation, then reattach)
+    PSP_Rs_value = PSP_Rs.value  # Extract numerical value, assuming PSP_Rs is an astropy Quantity
+    PSP_Rs_down = np.interp(target_time, original_time, PSP_Rs_value) * PSP_Rs.unit
+    
+    # Downsample Vsw_km (strip units for interpolation, then reattach)
+    Vsw_km_value = Vsw_km.value  # Extract numerical value, assuming Vsw_km is an astropy Quantity
+    Vsw_km_down = np.interp(target_time, original_time, Vsw_km_value) * Vsw_km.unit
+    
+    #--------------- sort by lon-lat range------------------#
+    
+    lanes_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fits/'
+    lanes_savename = 'lanes_gaussian_fwhm7_run_avg.fits'
+    
+    lanes_map = sunpy.map.Map(lanes_savepath+lanes_savename)
+    
+    # Get the map's spatial extent in world coordinates
+    lon_min, lon_max = lanes_map.meta['crval1'] - lanes_map.meta['cdelt1'] * lanes_map.data.shape[1] / 2, \
+                        lanes_map.meta['crval1'] + lanes_map.meta['cdelt1'] * lanes_map.data.shape[1] / 2
+    lat_min, lat_max = lanes_map.meta['crval2'] - lanes_map.meta['cdelt2'] * lanes_map.data.shape[0] / 2, \
+                        lanes_map.meta['crval2'] + lanes_map.meta['cdelt2'] * lanes_map.data.shape[0] / 2
+    
+    masked_time,masked_coords,mask = utils.sort_by_footpoint_coords(enc=enc,lon_range=(lon_min,lon_max),lat_range=(lat_min,lat_max),obstime=lanes_map.date)
+    
+    mask_q_region_time, mask_non_q_time, mask_q_indices = utils.find_quiescent_points(enc,target_time[mask])
+    
+    masked_Vsw_km = Vsw_km_down[mask]
+    masked_PSP_Rs = PSP_Rs_down[mask]
+    masked_T0_fitted = T0_fitted_down[mask]
+    
+    
+    #------------- plot -------------#
+    
+    breakpoint()
+    
+    
+    mask_mean_T0 = np.nanmean(masked_T0_fitted)*u.MK
+            
+    mask_mean_T0 = np.nanmax(masked_T0_fitted)*u.MK-0.75*u.MK
+    Rgrid = np.linspace(1,70,100)*u.R_sun
+    
+    mean_sol_pos,mean_sol_dens,mean_sol_vel,mean_sol_T0,mean_num = psw.solve_parker_isothermal(Rgrid,mask_mean_T0)
+    
+    mask_q_mean_T0 = np.nanmean(masked_T0_fitted[mask_q_indices])*u.MK
+    q_mean_sol_pos,q_mean_sol_dens,q_mean_sol_vel,q_mean_sol_T0,q_mean_num = psw.solve_parker_isothermal(Rgrid,mask_q_mean_T0)
+
+    mask_mean_T0_text = round(mask_mean_T0.value-mask_q_mean_T0.value,3)*u.MK
+
+
+
+    fig = plt.figure(figsize=(15,10))
+    ax = fig.add_subplot(111)
+    
+    ax.plot(masked_PSP_Rs,masked_Vsw_km,color='tab:blue',label='PSP In-situ Velocity', markersize=10, zorder=1)
+    ax.plot(masked_PSP_Rs[mask_q_indices],masked_Vsw_km[mask_q_indices],color='tab:orange',label='Quiescent Regions',
+            marker='o', markersize=4, zorder=2, linestyle='none')
+    
+    ax.plot(mean_sol_pos,mean_sol_vel,color='tab:blue',linestyle='--', zorder=3)
+    ax.plot(q_mean_sol_pos,q_mean_sol_vel,color='tab:orange',linestyle='--', zorder=3)
+    
+    # ax.text(20, 20, f"Average Fit Coronal Temp: T0 = {mean_T0_text}", fontsize=18, color='black', ha='center')
+    ax.set_xlim(13,14.5)
+    ax.set_ylim(130,600)
+    ax.text(14, 500, f"Diffence in Coronal Temps: T0 = {mask_mean_T0_text}", fontsize=18, color='black', ha='center')
+    ax.set_ylabel('Solar Wind Velocity (km/s)',fontsize=15)
+    ax.set_xlabel('Radial Position (Rs)',fontsize=15)
+    plt.legend()
+    plt.show()
+    
+    
+    
+    
+    
+    
+    mean_T0 = np.nanmean(T0_fitted)*u.MK
+    mean_T0_text = round(mean_T0.value,3)*u.MK
+    
+    mean_sol_pos,mean_sol_dens,mean_sol_vel,mean_sol_T0,mean_num = psw.solve_parker_isothermal(PSP_Rs,mean_T0)
+    
+    # Create mask to keep only non-NaN pairs
+    nan_mask = ~np.isnan(Vsw_km.value) & ~np.isnan(mean_sol_vel.value)
+    
+    # Filter both arrays
+    v_obs_clean = Vsw_km[nan_mask].value
+    v_pred_clean = mean_sol_vel[nan_mask].value
+    r_obs_clean = mean_sol_pos[nan_mask].value
+    
+    R2_check = r2_score(v_obs_clean, v_pred_clean)
+    # print(R2_check)
+    
+    fig = plt.figure(figsize=(15,10))
+    ax = fig.add_subplot(111)
+    
+    Rgrid = np.linspace(1,70,100)*u.R_sun
+    
+    sol_pos,sol_dens,sol_vel,sol_T0,num = psw.solve_parker_isothermal(Rgrid,mean_T0)
+
+    ax.plot(PSP_Rs,Vsw_km,color='tab:blue',label='PSP In-situ Velocity', markersize=10, zorder=1)
+    ax.plot(PSP_Rs[q_indices],Vsw_km[q_indices],color='tab:orange',label='Quiescent Regions',
+            marker='o', markersize=2, zorder=2, linestyle='none')
+    ax.plot(sol_pos,sol_vel,color='purple', zorder=3)
+    # ax.plot(PSP_Rs,Vsw_kms,color='tab:blue',label='PSP In-situ Velocity')
+    ax.text(20, 20, f"Average Fit Coronal Temp: T0 = {mean_T0_text}", fontsize=18, color='black', ha='center')
+    ax.set_xlim(0,70)
+    ax.set_ylabel('Solar Wind Velocity (km/s)',fontsize=15)
+    ax.set_xlabel('Radial Position (Rs)',fontsize=15)
+    ax.set_title('Parker Solution for Average T0, R²: '+str(round(R2_check,2)),fontsize=18)
+    plt.legend()
+    plt.show()
+    
+    # fig = plt.figure(figsize=(15,10))
+    
+def delta_d(enc):
+    
+    #------------------------------ Set path to tplot and quiescent region files ----------------------------------#
+
+    tplot_savename = 'Enc_'+str(enc)+'_footpoint_coords_hmi_rss_3_1.cdf'
+        
+    tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
+    #------------------------------ Read in Tplot Variables ----------------------------------#
+    
+    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    
+    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_time = solar_lon_data[0]
+    sol_lon = solar_lon_data[1]
+    
+    solar_lon_max_err_data = pyt.get_data('solar_lon_err_max')
+    # solar_lon_time = solar_lon_max_err_data[0]
+    sol_lon_max_err = solar_lon_max_err_data[1]
+    
+    solar_lon_min_err_data = pyt.get_data('solar_lon_err_min')
+    # solar_lon_time = solar_lon_max_err_data[0]
+    sol_lon_min_err = solar_lon_min_err_data[1]
+    
+    sol_lat_data = pyt.get_data('solar_lat')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat = sol_lat_data[1]
+        
+    sol_lat_max_err_data = pyt.get_data('solar_lat_err_max')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat_max_err = sol_lat_max_err_data[1]
+    
+    sol_lat_min_err_data = pyt.get_data('solar_lat_err_min')
+    # sol_lat_time = sol_lat_data[0]
+    sol_lat_min_err = sol_lat_min_err_data[1]
+    
+    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_time = r0_Rs_data[0]
+    r0_Rs = r0_Rs_data[1]
+    
+    
+    q_region_time, non_q_time, q_indices = utils.find_quiescent_points(enc,solar_lon_time)
+    
+    q_lon = sol_lon[q_indices]
+    q_lon_max = sol_lon_max_err[q_indices]
+    q_lon_min = sol_lon_min_err[q_indices]
+    
+    q_lat = sol_lat[q_indices]
+    q_lat_max = sol_lat_max_err[q_indices]
+    q_lat_min = sol_lat_min_err[q_indices]
+    
+    #---------read in map---------#
+    
+    lanes_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fits/'
+    lanes_savename = 'lanes_gaussian_fwhm7_run_avg.fits'
+    
+    lanes_map = sunpy.map.Map(lanes_savepath+lanes_savename)
+
+    threshold = 6  # Example threshold in Gauss (adjust based on your map's units, e.g., magnetic field strength)
+    down_value = 0  # Set to 0 or any other value (e.g., np.nan for transparency)
+    up_value = 1
+    # Access the map's data array
+    data = lanes_map.data
+    
+    # Create a new data array with thresholding
+    modified_data = data.copy()  # Avoid modifying the original data
+    modified_data[modified_data < threshold] = down_value  # Set values below threshold to 0
+    modified_data[modified_data >= threshold] = up_value  # Set values above threshold to 1    
+
+    # Preserve the original metadata
+    modified_map = sunpy.map.Map(modified_data, lanes_map.meta)
+    
+    # Get the map's spatial extent in world coordinates
+    lon_min, lon_max = lanes_map.meta['crval1'] - lanes_map.meta['cdelt1'] * lanes_map.data.shape[1] / 2, \
+                        lanes_map.meta['crval1'] + lanes_map.meta['cdelt1'] * lanes_map.data.shape[1] / 2
+    lat_min, lat_max = lanes_map.meta['crval2'] - lanes_map.meta['cdelt2'] * lanes_map.data.shape[0] / 2, \
+                        lanes_map.meta['crval2'] + lanes_map.meta['cdelt2'] * lanes_map.data.shape[0] / 2
+    
+    masked_time,masked_coords,mask = utils.sort_by_footpoint_coords(enc=enc,lon_range=(lon_min,lon_max),lat_range=(lat_min,lat_max),obstime=lanes_map.date)
+    
+    #------------------------------ Generate Plots ----------------------------------#
+    
+    # plot_map = lanes_map
+    plot_map = modified_map
+
+
+    sol_coords = SkyCoord(sol_lon*u.deg, sol_lat*u.deg, frame="heliographic_carrington",
+                            obstime=plot_map.date,  # Use the observation time of the map
+                            observer="earth")  # Match the observer of the map)
+
+    q_coords = SkyCoord(q_lon*u.deg, q_lat*u.deg, frame="heliographic_carrington",
+                            obstime=plot_map.date,  # Use the observation time of the map
+                            observer="earth")  # Match the observer of the map)
+    
+    sol_coords_max = SkyCoord(sol_lon_max_err*u.deg, sol_lat_max_err*u.deg, frame="heliographic_carrington",
+                            obstime=plot_map.date,  # Use the observation time of the map
+                            observer="earth")  # Match the observer of the map)
+
+    q_coords_max = SkyCoord(q_lon_max*u.deg, q_lat_max*u.deg, frame="heliographic_carrington",
+                            obstime=plot_map.date,  # Use the observation time of the map
+                            observer="earth")  # Match the observer of the map)
+    
+    sol_coords_min = SkyCoord(sol_lon_min_err*u.deg, sol_lat_min_err*u.deg, frame="heliographic_carrington",
+                            obstime=plot_map.date,  # Use the observation time of the map
+                            observer="earth")  # Match the observer of the map)
+
+    q_coords_min = SkyCoord(q_lon_min*u.deg, q_lat_min*u.deg, frame="heliographic_carrington",
+                            obstime=plot_map.date,  # Use the observation time of the map
+                            observer="earth")  # Match the observer of the map)
+    
+    
+    sol_coords = sol_coords
+    q_coords = q_coords
+
+
+    
+    # Get the map's spatial extent in world coordinates
+    lon_min, lon_max = plot_map.meta['crval1'] - plot_map.meta['cdelt1'] * plot_map.data.shape[1] / 2, \
+                        plot_map.meta['crval1'] + plot_map.meta['cdelt1'] * plot_map.data.shape[1] / 2
+    lat_min, lat_max = plot_map.meta['crval2'] - plot_map.meta['cdelt2'] * plot_map.data.shape[0] / 2, \
+                        plot_map.meta['crval2'] + plot_map.meta['cdelt2'] * plot_map.data.shape[0] / 2
+
+    # Define the bounds (already in decimal degrees)
+    lon_min = lon_min * u.deg
+    lon_max = lon_max * u.deg
+    lat_min = lat_min * u.deg
+    lat_max = lat_max * u.deg
+    
+    # Define the corner coordinates of the map bounds
+    bounds_coords = SkyCoord([lon_min, lon_max], [lat_min, lat_max], 
+                             frame="heliographic_carrington", 
+                             obstime=plot_map.date, 
+                             observer="earth")
+    
+    # Convert to pixel coordinates
+    bounds_pixel = plot_map.world_to_pixel(bounds_coords)
+    
+    # Extract pixel limits
+    x_pixel_min, x_pixel_max = bounds_pixel.x.value[0], bounds_pixel.x.value[1]
+    y_pixel_min, y_pixel_max = bounds_pixel.y.value[0], bounds_pixel.y.value[1]
+    
+    # Wrap longitudes around 0–360 degrees if necessary
+    data_coords_lon = sol_coords.lon.wrap_at(360 * u.deg)
+    q_data_coords_lon = q_coords.lon.wrap_at(360 * u.deg)
+    
+    # Create masks for the range
+    lon_mask = (data_coords_lon >= lon_min) & (data_coords_lon <= lon_max)
+    lat_mask = (sol_coords.lat >= lat_min) & (sol_coords.lat <= lat_max)
+    
+    q_lon_mask = (q_data_coords_lon >= lon_min) & (q_data_coords_lon <= lon_max)
+    q_lat_mask = (q_coords.lat >= lat_min) & (q_coords.lat <= lat_max)
+    
+    # Combine the masks
+    mask = lon_mask & lat_mask
+    q_mask = q_lon_mask & q_lat_mask
+    
+    # Filter all SkyCoord objects
+    sol_filtered_coords = sol_coords[mask]
+    sol_filtered_coords_max = sol_coords_max[mask]
+    sol_filtered_coords_min = sol_coords_min[mask]
+    
+    q_filtered_coords = q_coords[q_mask]
+    q_filtered_coords_max = q_coords_max[q_mask]
+    q_filtered_coords_min = q_coords_min[q_mask]
+    
+    # breakpoint()
+    
+    sol_distances_mm, q_distances_mm = utils.find_distance_to_nearest_lane(modified_map,sol_filtered_coords,q_filtered_coords)
+    
+    #------------------- delta-d histograms----------------------#
+    
+    fig = plt.figure(figsize=(30,15))
+    # axs = fig.add_subplot(1,1,1)
+    # print(j+k+1)
+    # index = n_types*j+1+k
+    # if k ==0:
+    axs = fig.add_subplot(111)
+    # axs = fig.add_subplot(n_rads,1,j+1)
+    axs.set_title("Footpoint ∂D Histograms",fontsize=38)
+    axs.set_ylabel('Counts',fontsize=38)
+    axs.set_xlabel('∂D (Mm)',fontsize=38)
+    
+    bins = np.linspace(0,8,20)
+    hist1, _ = np.histogram(sol_distances_mm.value, bins=bins)
+    hist2, _ = np.histogram(q_distances_mm.value, bins=bins)
+    
+    hist1_norm = hist1 / np.sum(hist1)
+    hist2_norm = hist2 / np.sum(hist2)
+    
+    # hist1_norm = hist1
+    # hist2_norm = hist2
+
+    # Calculate error bars for each bin (normalized)
+    error1 = np.sqrt(hist1) / np.sum(hist1)
+    error2 = np.sqrt(hist2) / np.sum(hist2)
+    
+    # error1 = np.sqrt(hist1) 
+    # error2 = np.sqrt(hist2) 
+    
+    # Plot histograms with error bars
+    axs.bar(bins[:-1], hist1_norm, width=np.diff(bins), align='center', alpha=0.5, label="Quiescent Footpoint ∂D",edgecolor='black')
+    axs.bar(bins[:-1], hist2_norm, width=np.diff(bins), align='center', alpha=0.5, label="Non-Quiescent Footpoint ∂D",edgecolor='black')
+    axs.errorbar(bins[:-1], hist1_norm, yerr=error1, fmt='none', color='k', capsize=3)
+    axs.errorbar(bins[:-1], hist2_norm, yerr=error2, fmt='none', color='k', capsize=3)
+    
+    axs.tick_params(axis='both', which='major', labelsize=34)
+    leg = axs.legend(fontsize=30,loc='upper right',markerscale=5)
+    
+    # axs.text(0.4,75,'Quiescent Mean: '+str(round(q_mean,2))+' ± '+str(round(q_std,2)),fontsize=30)
+    # axs.text(0.4,75,'Quiescent Median: '+str(round(q_median,3)),fontsize=22)
+    # axs.text(0.4,70,'Non-Quiescent Mean: '+str(round(non_q_mean,1))+' ± '+str(round(non_q_std,1)),fontsize=30)
+    # axs.text(0.4,65,'Non-Quiescent Median: '+str(round(non_q_median,3)),fontsize=22)
+    
+    plt.show()
+    
+    #-----------------supergranule lanes map---------------------#
+
+    plt.figure(figsize=(25,20))
+    shape = (720, 1440)
+    
+    axs = plt.subplot(projection=lanes_map)
+    plot_map.plot(clip_interval=(1, 99.99)*u.percent,cmap='binary_r') #cmap='binary',
+    axs.set_title('Supergranulation Lanes',fontsize=65)
+    
+    # Convert filtered coordinates to pixel space
+    sol_pixel_coords = lanes_map.world_to_pixel(sol_filtered_coords)
+    sol_pixel_coords_max = lanes_map.world_to_pixel(sol_filtered_coords_max)
+    sol_pixel_coords_min = lanes_map.world_to_pixel(sol_filtered_coords_min)
+    
+    q_pixel_coords = lanes_map.world_to_pixel(q_filtered_coords)
+    q_pixel_coords_max = lanes_map.world_to_pixel(q_filtered_coords_max)
+    q_pixel_coords_min = lanes_map.world_to_pixel(q_filtered_coords_min)
+
+    # Compute errors in pixel space
+    sol_x_err_plus = abs(sol_pixel_coords_max.x - sol_pixel_coords.x)
+    sol_x_err_minus = abs(sol_pixel_coords.x - sol_pixel_coords_min.x)
+    sol_y_err_plus = abs(sol_pixel_coords_max.y - sol_pixel_coords.y)
+    sol_y_err_minus = abs(sol_pixel_coords.y - sol_pixel_coords_min.y)
+    
+    q_x_err_plus = abs(q_pixel_coords_max.x - q_pixel_coords.x)
+    q_x_err_minus = abs(q_pixel_coords.x - q_pixel_coords_min.x)
+    q_y_err_plus = abs(q_pixel_coords_max.y - q_pixel_coords.y)
+    q_y_err_minus = abs(q_pixel_coords.y - q_pixel_coords_min.y)
+    
+    # # Plot using error bars in pixel coordinates
+    # axs.errorbar(sol_pixel_coords.x.value, sol_pixel_coords.y.value,
+    #               xerr=[sol_x_err_minus.value, sol_x_err_plus.value],
+    #               yerr=[sol_y_err_minus.value, sol_y_err_plus.value],
+    #               fmt='o', label='Non-Quiescent Footpoints', color="limegreen",
+    #               markersize=10,         # Bigger markers
+    #               markeredgewidth=4,     # Thicker marker edges (slightly thicker than lime)
+    #               elinewidth=3,          # Thicker error bar lines
+    #               capsize=5,             # Size of error bar caps
+    #               capthick=2)            # Thickness of error bar caps
+
+    # axs.errorbar(q_pixel_coords.x.value, q_pixel_coords.y.value,
+    #               xerr=[q_x_err_minus.value, q_x_err_plus.value],
+    #               yerr=[q_y_err_minus.value, q_y_err_plus.value],
+    #               fmt='o', label='Quiescent Region Footpoints', color="magenta",
+    #               markersize=10,         # Bigger markers
+    #               markeredgewidth=4,     # Thicker marker edges (slightly thicker than lime)
+    #               elinewidth=2,          # Thicker error bar lines
+    #               capsize=5,             # Size of error bar caps
+    #               capthick=2)            # Thickness of error bar caps
+    
+    
+    axs.set_ylabel("Carrington Latitude",fontsize=60)
+    axs.set_xlabel("Carrington Longitude",fontsize=60)
+
+    axs.tick_params(axis='both', which='major', labelsize=60)
+    
+    axs.set_xlim(x_pixel_min, x_pixel_max)
+    axs.set_ylim(y_pixel_min, y_pixel_max)
+
+    # handles, labels = axs.get_legend_handles_labels()
+    # handler_map = {type(sol_p): MarkerSizeHandler() for sol_p in handles}
+    # leg = axs.legend(handles, labels, handler_map=handler_map,fontsize=40,loc='lower right')
+    leg = plt.legend(fontsize=40,loc='lower left')
+
+    # leg.legend_handles[0].set_color('lime')
+    # leg.legend_handles[1].set_color('magenta')
+    
+    plt.show()
+    
+
