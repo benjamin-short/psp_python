@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env pyshon3
 # -*- coding: utf-8 -*-
 """
 Created on Thu May 22 12:48:32 2025
@@ -7,53 +7,21 @@ Created on Thu May 22 12:48:32 2025
 """
 
 import os
-import pyspedas.psp as psp
+import pyspedas.projects.psp as psp
 import pyspedas as pys
 import matplotlib.pyplot as plt
 import numpy as np
 import astropy.units as u
 import astropy.constants as const
 
-from scipy.interpolate import interp1d
-import pytplot as pyt
-from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
-from datetime import date
-from matplotlib import ticker
-from statistics import median
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-import gc
-import math
-import random
-import cartopy.crs as ccrs
-import pyspedas.stereo as ste
-from matplotlib import gridspec
-import time
-import pickle as pkl
-from streamtracer import StreamTracer, VectorGrid
-
-from findpeaks import findpeaks
-from scipy.interpolate import UnivariateSpline
-from scipy.optimize import curve_fit
-
 from .config import CONFIG
 from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
-from numpy.linalg import inv
-
-import matplotlib.patches as mpatch
-
-import re
-import pandas as pd
-
-import glob
-
-import matplotlib as mpl
-
-from lmfit.models import SkewedGaussianModel
-
 import psp_regions.utils as utils
+
+from pathlib import Path
 
 fields_id = os.environ['PSP_FIELDS_ID']
 fields_pass = os.environ['PSP_FIELDS_PW']
@@ -61,8 +29,8 @@ fields_pass = os.environ['PSP_FIELDS_PW']
 # sweap_id = os.environ['PSP_SWEAP_ID']
 # sweap_pass = os.environ['PSP_SWEAP_PW']
 
-sweap_id = os.environ['PSP_SWEAP_ID_berk']
-sweap_pass = os.environ['PSP_SWEAP_PW_berk']
+sweap_id = os.environ['PSP_SWEAP_ID_BERK']
+sweap_pass = os.environ['PSP_SWEAP_PW_BERK']
 
 jsoc_email = os.environ['JSOC_EMAIL']
 
@@ -107,13 +75,13 @@ def delb_b(enc='all',enc_radius=65,save=False):
     
     #----------------------Organizing CSVs for in Data-------------------------#
     
-    csv_path = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    csv_path = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/region_data/').expanduser())
     
     #--------------------------Start importing PSP Data-----------------------------#
     
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -183,14 +151,14 @@ def delb_b(enc='all',enc_radius=65,save=False):
         
         psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
         
-        pos_data = pyt.get_data('psp_spi_SUN_DIST')
+        pos_data = pys.get_data('psp_spi_SUN_DIST')
         pos_time = pos_data[0]
         pos_rs = pos_data[1]/Rs
         
         psp.fields(trange=[t0,tf],level='l2',datatype='mag_RTN_4_Sa_per_Cyc',last_version=True,username=fields_id,password=fields_pass)
         # psp.fields(trange=[t0,tf],level='l2',datatype='mag_RTN',last_version=True,username=fields_id,password=fields_pass)
-        mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
-        # mag_data = pyt.get_data('psp_fld_l2_mag_RTN')
+        mag_data = pys.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+        # mag_data = pys.get_data('psp_fld_l2_mag_RTN')
         
         mag_time_arr = mag_data[0]
         mag_data_arr = mag_data[1]
@@ -515,10 +483,10 @@ def norm_cross_heli(enc='all',rlim=35,tau=30,overlap=0.5,tau_unit='min',save=Fal
 
         
         # psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass,last_version=True)
-        # vel_data_spc = pyt.get_data('psp_spc_vp_fit_RTN')
+        # vel_data_spc = pys.get_data('psp_spc_vp_fit_RTN')
         
         # if vel_data_spc == None:
-        #     vel_data_spc = pyt.get_data('spp_spc_vp_fit_RTN')
+        #     vel_data_spc = pys.get_data('spp_spc_vp_fit_RTN')
         # vel_time_arr_spc = vel_data_spc[0]
         # vel_data_arr_spc = vel_data_spc[1]
         
@@ -528,7 +496,7 @@ def norm_cross_heli(enc='all',rlim=35,tau=30,overlap=0.5,tau_unit='min',save=Fal
         
         psp.fields(trange=[t0,tf],datatype='sqtn_rfs_V1V2',level='l3',username=fields_id,password=fields_pass,last_version=True)
         
-        dens_data = pyt.get_data('electron_density')
+        dens_data = pys.get_data('electron_density')
         dens_time = dens_data[0]
         density = dens_data[1] #number density in 1/cm^3
         
@@ -541,7 +509,7 @@ def norm_cross_heli(enc='all',rlim=35,tau=30,overlap=0.5,tau_unit='min',save=Fal
         time_lim_min = np.min(dens_time)
         
         psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-        vel_data_spi = pyt.get_data('psp_spi_VEL_RTN_SUN')
+        vel_data_spi = pys.get_data('psp_spi_VEL_RTN_SUN')
         vel_time_arr_spi = vel_data_spi[0]
         vel_data_arr_spi = vel_data_spi[1]
         
@@ -568,7 +536,7 @@ def norm_cross_heli(enc='all',rlim=35,tau=30,overlap=0.5,tau_unit='min',save=Fal
         Vn_down = np.interp(dens_time, vel_time_clean, Vn)*u.km/u.s
         
         psp.fields(trange=[t0,tf],datatype='mag_RTN_4_Sa_per_Cyc',level='l2',username=fields_id,password=fields_pass,last_version=True)
-        mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+        mag_data = pys.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
         mag_time_arr = mag_data[0]
         mag_data_arr = mag_data[1]
         
@@ -599,7 +567,7 @@ def norm_cross_heli(enc='all',rlim=35,tau=30,overlap=0.5,tau_unit='min',save=Fal
         Bn_Va = (Bn_down.to(u.T)/np.sqrt(const.mu0*rho)).to(u.km/u.s)
         B_Va = np.sqrt(Br_Va**2+Bt_Va**2+Bn_Va**2)
         
-        pyt.del_data()
+        pys.del_data()
         
         Br_Va_av, Br_ind = utils.sliding_average(Br_Va.value,window_len,overlap)
         Bt_Va_av, Bt_ind = utils.sliding_average(Bt_Va.value,window_len,overlap)

@@ -13,39 +13,25 @@ import numpy as np
 
 import os
 import pyspedas as pys
-import pytplot as pyt
 
 import astropy.units as u
 import pandas as pd
-import csv
 
 import sunpy.map
 from sunpy.net import Fido, attrs as a
 from sunpy.time import parse_time
 
-from datetime import datetime, timedelta
-
 import parkersolarwind as psw
 from multiprocessing import Pool
+from datetime import datetime
 
 from scipy.optimize import minimize
 from sklearn.metrics import r2_score
-from scipy.interpolate import interp1d
 import sys
 
 import _pickle as cpkl
 
-from sunkit_magex import pfss
-import astropy.units as u
-import astropy.constants as const
-
-import matplotlib.pyplot as plt
-from matplotlib.legend_handler import HandlerBase
-from matplotlib.markers import MarkerStyle
-import matplotlib.dates as mdates
-
 from astropy.coordinates import SkyCoord
-from astropy.coordinates import Angle
 
 def find_every_i_days(dates, reference_index,day_num=3):
     reference_date = dates[reference_index]
@@ -466,13 +452,13 @@ def SPC_SPI_Construct(enc,spi_time,spi_data,spc_time,spc_data):
     span_check_savename = 'SPAN_SPC_QTN_flags_enc_'+str(enc)+'.cdf'
     span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
     
-    pyt.tplot_restore(span_check_savepath+span_check_savename)
+    pys.tplot_restore(span_check_savepath+span_check_savename)
 
-    SPAN_QTN_flag = pyt.get_data('SPAN_qual_flag')
+    SPAN_QTN_flag = pys.get_data('SPAN_qual_flag')
     SPAN_flag_time = SPAN_QTN_flag[0]
     SPAN_flag = SPAN_QTN_flag[1]
     
-    # SPC_QTN_flag = pyt.get_data('SPC_qual_flag')
+    # SPC_QTN_flag = pys.get_data('SPC_qual_flag')
     # SPC_flag_time = SPC_QTN_flag[0]
     # SPC_flag = SPC_QTN_flag[1]
     
@@ -590,8 +576,8 @@ def encounter_dates(enc,rlim):
     Rs_km = 6.957e5*u.km #solar radius in km  
     
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/' #historical position
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v42.cdf')
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v42.cdf')
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -737,13 +723,13 @@ def read_in_footpoints(t0='2020-01-29',tf=None,enc=None,save=True):
     
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
-    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_data = pys.get_data('solar_lon')
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
     
-    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_data = pys.get_data('solar_lat')
     sol_lat = sol_lat_data[1]
     
     
@@ -756,7 +742,7 @@ def read_in_parker_fits(enc,model='iso'):
     
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
     cdf_var = [model+"_T0_coronal_temp_fit",model+"_T0_coronal_temp_fit_max_err",model+"_T0_coronal_temp_fit_min_err",
                model+"_r2_scores",model+"_r2_scores_max_err",model+"_r2_scores_min_err",
@@ -773,7 +759,7 @@ def read_in_parker_fits(enc,model='iso'):
     tplot_dict = {}
 
     # Get the list of all Tplot variable names
-    all_variable_names = pyt.tplot_names()
+    all_variable_names = pys.tplot_names()
     # Check if anything was loaded
     if not all_variable_names:
         print("No variables were loaded from the file.")
@@ -785,7 +771,7 @@ def read_in_parker_fits(enc,model='iso'):
     # Loop through all variable names and create tuples
     for var_name in cdf_var:
         # Get the data for this variable
-        data = pyt.get_data(var_name)
+        data = pys.get_data(var_name)
         
         if data is not None:
             # Create a tuple of (time_array, data_array)
@@ -846,19 +832,19 @@ def sort_by_footpoint_coords(enc,lon_range=None,lat_range=None,obstime=None):
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
     
-    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_data = pys.get_data('solar_lon')
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
 
     
-    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_data = pys.get_data('solar_lat')
     # sol_lat_time = sol_lat_data[0]
     sol_lat = sol_lat_data[1]
     
-    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_data = pys.get_data('PSP_Rs')
     r0_Rs_time = r0_Rs_data[0]
     r0_Rs = r0_Rs_data[1]
     

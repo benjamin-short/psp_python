@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env pyshon3
 # -*- coding: utf-8 -*-
 """
 Created on Tue Sep 20 16:28:14 2022
@@ -19,8 +19,8 @@ import random
 import pandas as pd
 import csv
 
-import pytplot as pyt
-import pyspedas.psp as psp
+# import pysplot as pys
+import pyspedas.projects.psp as psp
 import pyspedas as pys
 
 import matplotlib.pyplot as plt
@@ -66,8 +66,8 @@ fields_pass = os.environ['PSP_FIELDS_PW']
 # sweap_id = os.environ['PSP_SWEAP_ID']
 # sweap_pass = os.environ['PSP_SWEAP_PW']
 
-sweap_id = os.environ['PSP_SWEAP_ID_berk']
-sweap_pass = os.environ['PSP_SWEAP_PW_berk']
+sweap_id = os.environ['PSP_SWEAP_ID_BERK']
+sweap_pass = os.environ['PSP_SWEAP_PW_BERK']
 
 jsoc_email = os.environ['JSOC_EMAIL']
 
@@ -129,7 +129,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     #------position data importing------#
 
     psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
-    pos_data = pyt.get_data('position')
+    pos_data = pys.get_data('position')
     
     pos_time_arr = pos_data[0]
     pos_data_arr = pos_data[1]
@@ -142,10 +142,10 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
         
-    spc_data = pyt.get_data('psp_spc_vp_fit_RTN')
+    spc_data = pys.get_data('psp_spc_vp_fit_RTN')
     
     if spc_data == None:
-        spc_data = pyt.get_data('spp_spc_vp_fit_RTN')
+        spc_data = pys.get_data('spp_spc_vp_fit_RTN')
 
     spc_time_arr = spc_data[0]
     spc_data_arr = spc_data[1]
@@ -165,10 +165,10 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     spc_time_arr = spc_time_down
     vr_spc = spc_v_down
     
-    spc_temp_data = pyt.get_data('psp_spc_wp1_fit')
+    spc_temp_data = pys.get_data('psp_spc_wp1_fit')
     
     if spc_temp_data == None:
-        spc_temp_data = pyt.get_data('spp_spc_wp1_fit')
+        spc_temp_data = pys.get_data('spp_spc_wp1_fit')
     
     spc_temp_time_arr = spc_temp_data[0]
     spc_temp_data_arr = spc_temp_data[1]
@@ -191,14 +191,14 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
 
-    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    vel_data = pys.get_data('psp_spi_VEL_RTN_SUN')
     
     spi_time_arr = vel_data[0]
     spi_data_arr = vel_data[1]
     
     vr_spi = spi_data_arr[:,0]
     
-    temp_data = pyt.get_data('psp_spi_TEMP')
+    temp_data = pys.get_data('psp_spi_TEMP')
     
     spi_temp_data_arr = temp_data[1]
     
@@ -208,7 +208,7 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
     
     psp.fields(trange=[t0,tf],level='l2',datatype='mag_RTN_1min',username=fields_id,password=fields_id,last_version=True)
     
-    mag_data = pyt.get_data('psp_fld_l2_mag_RTN_1min')
+    mag_data = pys.get_data('psp_fld_l2_mag_RTN_1min')
     
     mag_time_arr = mag_data[0]
     mag_data_arr = mag_data[1]
@@ -834,27 +834,27 @@ def quiescent_map(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False
         tplot_Vsw_Rs = Vsw_Rs_new
         tplot_Tp = Tp_new
 
-        pyt.store_data("solar_lon", data={'x':tplot_time, 'y':tplot_sol_lon})
-        pyt.store_data("solar_lon_err_max", data={'x':tplot_time, 'y':tplot_sol_lon_err_max})
-        pyt.store_data("solar_lon_err_min", data={'x':tplot_time, 'y':tplot_sol_lon_err_min})
-        pyt.store_data("solar_lat", data={'x':tplot_time, 'y':tplot_sol_lat})
-        pyt.store_data("solar_lat_err_max", data={'x':tplot_time, 'y':tplot_sol_lat_err_max})
-        pyt.store_data("solar_lat_err_min", data={'x':tplot_time, 'y':tplot_sol_lat_err_min})
-        pyt.store_data("PSP_lon", data={'x':tplot_time, 'y':tplot_carr_lon})
-        pyt.store_data("PSP_lat", data={'x':tplot_time, 'y':tplot_carr_lat})
-        pyt.store_data("PSP_Rs", data={'x':tplot_time, 'y':tplot_r0_Rs})
-        pyt.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
-        pyt.store_data("Vsw_Rs",data={'x':tplot_time, 'y':tplot_Vsw_Rs})
-        pyt.store_data("Temp_p",data={'x':tplot_time,'y':tplot_Tp})  
+        pys.store_data("solar_lon", data={'x':tplot_time, 'y':tplot_sol_lon})
+        pys.store_data("solar_lon_err_max", data={'x':tplot_time, 'y':tplot_sol_lon_err_max})
+        pys.store_data("solar_lon_err_min", data={'x':tplot_time, 'y':tplot_sol_lon_err_min})
+        pys.store_data("solar_lat", data={'x':tplot_time, 'y':tplot_sol_lat})
+        pys.store_data("solar_lat_err_max", data={'x':tplot_time, 'y':tplot_sol_lat_err_max})
+        pys.store_data("solar_lat_err_min", data={'x':tplot_time, 'y':tplot_sol_lat_err_min})
+        pys.store_data("PSP_lon", data={'x':tplot_time, 'y':tplot_carr_lon})
+        pys.store_data("PSP_lat", data={'x':tplot_time, 'y':tplot_carr_lat})
+        pys.store_data("PSP_Rs", data={'x':tplot_time, 'y':tplot_r0_Rs})
+        pys.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
+        pys.store_data("Vsw_Rs",data={'x':tplot_time, 'y':tplot_Vsw_Rs})
+        pys.store_data("Temp_p",data={'x':tplot_time,'y':tplot_Tp})  
         
-        pyt.store_data("polarity",data={'x':tplot_time, 'y':tplot_polarity})
-        pyt.store_data("expansion_factor",data={'x':tplot_time, 'y':tplot_expansion})
-        pyt.store_data("corrected_time",data={'x':tplot_time, 'y':tplot_c_time})
+        pys.store_data("polarity",data={'x':tplot_time, 'y':tplot_polarity})
+        pys.store_data("expansion_factor",data={'x':tplot_time, 'y':tplot_expansion})
+        pys.store_data("corrected_time",data={'x':tplot_time, 'y':tplot_c_time})
     
         cdf_var_list = ["solar_lon","solar_lon_err_max","solar_lon_err_min","solar_lat","solar_lat_err_max","solar_lat_err_min",
                         "PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","Temp_p","polarity","expansion_factor","corrected_time"]
         
-        pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
+        pys.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
         
         if full_run:
             sort_footpoints(enc=enc,infile=tplot_savename)
@@ -912,32 +912,32 @@ def sort_footpoints(t0='2020-01-29',tf=None,enc=None,save=True,infile=None):
     # breakpoint()
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
-    rss_data = pyt.get_data('rss')
+    rss_data = pys.get_data('rss')
     rss = rss_data[0]
     rss = rss[0]
     
-    carr_lon_data = pyt.get_data('PSP_lon')
+    carr_lon_data = pys.get_data('PSP_lon')
     carr_lon_time = carr_lon_data[0]
     carr_lon = carr_lon_data[1]
     
-    carr_lat_data = pyt.get_data('PSP_lat')
+    carr_lat_data = pys.get_data('PSP_lat')
     carr_lat = carr_lat_data[1]
     
     # sintheta = np.sin((90-carr_lat)*np.pi/180) #sin of the azimuthal angle, which is 90 degrees minus the latitude
     
-    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_data = pys.get_data('solar_lon')
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
     
-    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_data = pys.get_data('solar_lat')
     sol_lat = sol_lat_data[1]
     
-    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_data = pys.get_data('PSP_Rs')
     r0_Rs = r0_Rs_data[1]
     
-    exp_fact_data = pyt.get_data('expansion_factor')
+    exp_fact_data = pys.get_data('expansion_factor')
     exp_fact = exp_fact_data[1]
     
     #---------------------------- Read in quiescent regions --------------------------------#
@@ -1063,33 +1063,33 @@ def sort_footpoints(t0='2020-01-29',tf=None,enc=None,save=True,infile=None):
         
         #---------tplot saves---------#
         
-        pyt.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #total solar longitude
-        pyt.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
-        pyt.store_data("PSP_lon", data={'x':t_tplot_time, 'y':tplot_carr_lon})
-        pyt.store_data("PSP_lat", data={'x':t_tplot_time, 'y':tplot_carr_lat})
+        pys.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #total solar longitude
+        pys.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
+        pys.store_data("PSP_lon", data={'x':t_tplot_time, 'y':tplot_carr_lon})
+        pys.store_data("PSP_lat", data={'x':t_tplot_time, 'y':tplot_carr_lat})
         
-        pyt.store_data("PSP_Rs", data={'x':t_tplot_time, 'y':tplot_r0_Rs})
-        pyt.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
+        pys.store_data("PSP_Rs", data={'x':t_tplot_time, 'y':tplot_r0_Rs})
+        pys.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
         
-        # pyt.store_data("polarity",data={'x':t_tplot_time, 'y':tplot_polarity})
-        pyt.store_data("expansion_factor",data={'x':t_tplot_time, 'y':tplot_expansion})
+        # pys.store_data("polarity",data={'x':t_tplot_time, 'y':tplot_polarity})
+        pys.store_data("expansion_factor",data={'x':t_tplot_time, 'y':tplot_expansion})
         
         #--- quiescent ---#
         
-        pyt.store_data("q_solar_lon", data={'x':q_tplot_time, 'y':q_tplot_sol_lon}) #quiescent solar longitude
-        pyt.store_data("q_solar_lat", data={'x':q_tplot_time, 'y':q_tplot_sol_lat})
-        pyt.store_data("q_expansion_factor",data={'x':q_tplot_time, 'y':q_expansion})
+        pys.store_data("q_solar_lon", data={'x':q_tplot_time, 'y':q_tplot_sol_lon}) #quiescent solar longitude
+        pys.store_data("q_solar_lat", data={'x':q_tplot_time, 'y':q_tplot_sol_lat})
+        pys.store_data("q_expansion_factor",data={'x':q_tplot_time, 'y':q_expansion})
         
         #---non quiescent---#
         
-        pyt.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
-        pyt.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
-        pyt.store_data("nq_expansion_factor",data={'x':nq_tplot_time, 'y':nq_expansion})
+        pys.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
+        pys.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
+        pys.store_data("nq_expansion_factor",data={'x':nq_tplot_time, 'y':nq_expansion})
     
         cdf_var_list = ["solar_lon","solar_lat","PSP_lon","PSP_lat","PSP_Rs","rss","Vsw_Rs","Temp_p","polarity","expansion_factor",
                         "q_solar_lon","q_solar_lat","q_expansion_factor","nq_solar_lon","nq_solar_lat","nq_expansion_factor"]
         
-        pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
+        pys.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
 
 def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,save_coords=False,rlim=65,
                   source='hmi',adapt_source='gong',peri=False,low_res=True,full_run=True,test_plot=False):
@@ -1120,7 +1120,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     #------position data importing------#    
 
     psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
-    pos_data = pyt.get_data('position')
+    pos_data = pys.get_data('position')
     
     pos_time_arr = pos_data[0]
     pos_data_arr = pos_data[1]
@@ -1133,10 +1133,10 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     
     psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
         
-    spc_data = pyt.get_data('psp_spc_vp_fit_RTN')
+    spc_data = pys.get_data('psp_spc_vp_fit_RTN')
     
     if spc_data == None:
-        spc_data = pyt.get_data('spp_spc_vp_fit_RTN')
+        spc_data = pys.get_data('spp_spc_vp_fit_RTN')
         
     # breakpoint()
         
@@ -1162,7 +1162,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     
     psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
 
-    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    vel_data = pys.get_data('psp_spi_VEL_RTN_SUN')
     
     spi_time_arr = vel_data[0]
     spi_data_arr = vel_data[1]
@@ -1173,7 +1173,7 @@ def select_rss(t0='2020-01-29',tf=None,enc=None,rss=2.5,r_tmp=None,plot=False,sa
     
     psp.fields(trange=[t0,tf],level='l2',datatype='mag_RTN_1min',username=fields_id,password=fields_id,last_version=True)
     
-    mag_data = pyt.get_data('psp_fld_l2_mag_RTN_1min')
+    mag_data = pys.get_data('psp_fld_l2_mag_RTN_1min')
     
     mag_time_arr = mag_data[0]
     mag_data_arr = mag_data[1]
@@ -1973,50 +1973,50 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
     # breakpoint()
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
-    rss_data = pyt.get_data('rss')
+    rss_data = pys.get_data('rss')
     rss = rss_data[0]
     rss = rss[0]
     
-    carr_lon_data = pyt.get_data('PSP_lon')
+    carr_lon_data = pys.get_data('PSP_lon')
     carr_lon_time = carr_lon_data[0]
     carr_lon = carr_lon_data[1]
     
-    carr_lat_data = pyt.get_data('PSP_lat')
+    carr_lat_data = pys.get_data('PSP_lat')
     carr_lat = carr_lat_data[1]
     
-    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_data = pys.get_data('solar_lon')
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
     
-    solar_lon_max_err_data = pyt.get_data('solar_lon_err_max')
+    solar_lon_max_err_data = pys.get_data('solar_lon_err_max')
     # solar_lon_time = solar_lon_max_err_data[0]
     sol_lon_max_err = solar_lon_max_err_data[1]
     
-    solar_lon_min_err_data = pyt.get_data('solar_lon_err_min')
+    solar_lon_min_err_data = pys.get_data('solar_lon_err_min')
     # solar_lon_time = solar_lon_max_err_data[0]
     sol_lon_min_err = solar_lon_min_err_data[1]
     
-    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_data = pys.get_data('solar_lat')
     # sol_lat_time = sol_lat_data[0]
     sol_lat = sol_lat_data[1]
     
-    sol_lat_max_err_data = pyt.get_data('solar_lat_err_max')
+    sol_lat_max_err_data = pys.get_data('solar_lat_err_max')
     # sol_lat_time = sol_lat_data[0]
     sol_lat_max_err = sol_lat_max_err_data[1]
     
-    sol_lat_min_err_data = pyt.get_data('solar_lat_err_min')
+    sol_lat_min_err_data = pys.get_data('solar_lat_err_min')
     # sol_lat_time = sol_lat_data[0]
     sol_lat_min_err = sol_lat_min_err_data[1]
     
-    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_data = pys.get_data('PSP_Rs')
     r0_Rs_time = r0_Rs_data[0]
     r0_Rs = r0_Rs_data[1]
     
     # breakpoint()
     
-    exp_fact_data = pyt.get_data('expansion_factor')
+    exp_fact_data = pys.get_data('expansion_factor')
     exp_fact = exp_fact_data[1]
     
     rs_where = np.where(r0_Rs==min(r0_Rs))
@@ -2185,43 +2185,43 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
         
         #---------tplot saves---------#
         
-        pyt.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #all footpoint solar longitude
-        pyt.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
-        pyt.store_data("PSP_lon", data={'x':t_tplot_time, 'y':tplot_carr_lon})
-        pyt.store_data("PSP_lat", data={'x':t_tplot_time, 'y':tplot_carr_lat})
+        pys.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #all footpoint solar longitude
+        pys.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
+        pys.store_data("PSP_lon", data={'x':t_tplot_time, 'y':tplot_carr_lon})
+        pys.store_data("PSP_lat", data={'x':t_tplot_time, 'y':tplot_carr_lat})
         
-        pyt.store_data("PSP_Rs", data={'x':t_tplot_time, 'y':tplot_r0_Rs})
-        pyt.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
+        pys.store_data("PSP_Rs", data={'x':t_tplot_time, 'y':tplot_r0_Rs})
+        pys.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
         
-        # pyt.store_data("polarity",data={'x':t_tplot_time, 'y':tplot_polarity})
-        pyt.store_data("expansion_factor",data={'x':t_tplot_time, 'y':tplot_expansion})
+        # pys.store_data("polarity",data={'x':t_tplot_time, 'y':tplot_polarity})
+        pys.store_data("expansion_factor",data={'x':t_tplot_time, 'y':tplot_expansion})
         
         #--- quiescent ---#
         
-        pyt.store_data("q_solar_lon", data={'x':region_time, 'y':region_foot_lon}) #quiescent solar longitude
-        pyt.store_data("q_solar_lon_max_err", data={'x':region_time, 'y':region_foot_lon_max})
-        pyt.store_data("q_solar_lon_min_err", data={'x':region_time, 'y':region_foot_lon_min})
-        pyt.store_data("q_solar_lat", data={'x':region_time, 'y':region_foot_lat})
-        pyt.store_data("q_solar_lat_max_err", data={'x':region_time, 'y':region_foot_lat_max})
-        pyt.store_data("q_solar_lat_min_err", data={'x':region_time, 'y':region_foot_lat_min})
+        pys.store_data("q_solar_lon", data={'x':region_time, 'y':region_foot_lon}) #quiescent solar longitude
+        pys.store_data("q_solar_lon_max_err", data={'x':region_time, 'y':region_foot_lon_max})
+        pys.store_data("q_solar_lon_min_err", data={'x':region_time, 'y':region_foot_lon_min})
+        pys.store_data("q_solar_lat", data={'x':region_time, 'y':region_foot_lat})
+        pys.store_data("q_solar_lat_max_err", data={'x':region_time, 'y':region_foot_lat_max})
+        pys.store_data("q_solar_lat_min_err", data={'x':region_time, 'y':region_foot_lat_min})
         
-        pyt.store_data("q_expansion_factor",data={'x':region_time, 'y':region_exp_fact})
+        pys.store_data("q_expansion_factor",data={'x':region_time, 'y':region_exp_fact})
         
         #---non quiescent---#
         
-        pyt.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
-        pyt.store_data("nq_solar_lon_max_err", data={'x':region_time, 'y':nq_tplot_sol_lon_max})
-        pyt.store_data("nq_solar_lon_min_err", data={'x':region_time, 'y':nq_tplot_sol_lon_min})
-        pyt.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
-        pyt.store_data("nq_solar_lat_max_err", data={'x':region_time, 'y':nq_tplot_sol_lat_max})
-        pyt.store_data("nq_solar_lat_min_err", data={'x':region_time, 'y':nq_tplot_sol_lat_min})
-        pyt.store_data("nq_expansion_factor",data={'x':nq_tplot_time, 'y':nq_expansion})
+        pys.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
+        pys.store_data("nq_solar_lon_max_err", data={'x':region_time, 'y':nq_tplot_sol_lon_max})
+        pys.store_data("nq_solar_lon_min_err", data={'x':region_time, 'y':nq_tplot_sol_lon_min})
+        pys.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
+        pys.store_data("nq_solar_lat_max_err", data={'x':region_time, 'y':nq_tplot_sol_lat_max})
+        pys.store_data("nq_solar_lat_min_err", data={'x':region_time, 'y':nq_tplot_sol_lat_min})
+        pys.store_data("nq_expansion_factor",data={'x':nq_tplot_time, 'y':nq_expansion})
         
         # #---long quiescent---#
         
-        # pyt.store_data("long_solar_lon", data={'x':long_tplot_time, 'y':long_tplot_sol_lon}) #non quiescent solar longitude
-        # pyt.store_data("long_solar_lat", data={'x':long_tplot_time, 'y':long_tplot_sol_lat})
-        # pyt.store_data("long_expansion_factor",data={'x':long_tplot_time, 'y':long_expansion})
+        # pys.store_data("long_solar_lon", data={'x':long_tplot_time, 'y':long_tplot_sol_lon}) #non quiescent solar longitude
+        # pys.store_data("long_solar_lat", data={'x':long_tplot_time, 'y':long_tplot_sol_lat})
+        # pys.store_data("long_expansion_factor",data={'x':long_tplot_time, 'y':long_expansion})
         
         
     
@@ -2230,7 +2230,7 @@ def footpoint_plot(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=True,
                         "nq_solar_lon","nq_solar_lon_max_err","nq_solar_lon_min_err","nq_solar_lat",
                         "nq_solar_lat_max_err","nq_solar_lat_min_err","nq_expansion_factor"]
         
-        pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
+        pys.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the PFSS properties to a .cdf file
     
     
     
@@ -2586,15 +2586,15 @@ def expansion_analysis(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=T
             #-------------------------- import tplot files ---------------------------#
             tplot_savename = 'Enc_'+str(enc)+'_sorted_PFSS_data.cdf'
             
-            pyt.tplot_restore(tplot_savepath+tplot_savename)
+            pys.tplot_restore(tplot_savepath+tplot_savename)
             
             # breakpoint()
             
-            rss_data = pyt.get_data('rss')
+            rss_data = pys.get_data('rss')
             rss = rss_data[0]
             rss = rss[0]
             
-            exp_data = pyt.get_data('expansion_factor') #full data for expansion factors
+            exp_data = pys.get_data('expansion_factor') #full data for expansion factors
             exp_time = exp_data[0]
             expansion_factor = exp_data[1]
             expansion_factor_fin_time = exp_time[np.isfinite(expansion_factor)]
@@ -2602,14 +2602,14 @@ def expansion_analysis(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=T
             
             
             
-            q_exp_data = pyt.get_data('q_expansion_factor') #quiescent expansion factors
+            q_exp_data = pys.get_data('q_expansion_factor') #quiescent expansion factors
             q_exp_time = q_exp_data[0]
             q_expansion_factor = q_exp_data[1]
             q_expansion_factor_fin_time = q_exp_time[np.isfinite(q_expansion_factor)]
             q_expansion_factor_finite = q_expansion_factor[np.isfinite(q_expansion_factor)]
             
             
-            nq_exp_data = pyt.get_data('nq_expansion_factor') #non quiescent expansion factors
+            nq_exp_data = pys.get_data('nq_expansion_factor') #non quiescent expansion factors
             nq_exp_time = nq_exp_data[0]
             nq_expansion_factor = nq_exp_data[1]
             
@@ -2636,26 +2636,26 @@ def expansion_analysis(t0='2020-01-29',tf=None,enc=None,save_coords=False,plot=T
         print('yeppers')
         #-------------------------- import tplot files ---------------------------#
         
-        pyt.tplot_restore(tplot_savepath+tplot_savename)
+        pys.tplot_restore(tplot_savepath+tplot_savename)
         
-        rss_data = pyt.get_data('rss')
+        rss_data = pys.get_data('rss')
         rss = rss_data[0]
         rss = rss[0]
         
-        exp_data = pyt.get_data('expansion_factor') #full data for expansion factors
+        exp_data = pys.get_data('expansion_factor') #full data for expansion factors
         exp_time = exp_data[0]
         expansion_factor = exp_data[1]
         exp_fact_fin_time = exp_time[np.isfinite(expansion_factor)]
         exp_fact_fin = expansion_factor[np.isfinite(expansion_factor)]
         
-        q_exp_data = pyt.get_data('q_expansion_factor') #quiescent expansion factors
+        q_exp_data = pys.get_data('q_expansion_factor') #quiescent expansion factors
         q_exp_time = q_exp_data[0]
         q_expansion_factor = q_exp_data[1]
         q_exp_fact_fin_time = q_exp_time[np.isfinite(expansion_factor)]
         q_exp_fact_fin = q_expansion_factor[np.isfinite(q_expansion_factor)]
         
         
-        nq_exp_data = pyt.get_data('nq_expansion_factor') #non quiescent expansion factors
+        nq_exp_data = pys.get_data('nq_expansion_factor') #non quiescent expansion factors
         nq_exp_time = nq_exp_data[0]
         nq_expansion_factor = nq_exp_data[1]
         
@@ -2734,43 +2734,43 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/data_outputs/'
     
     tplot_savename = 'Enc_'+str(enc)+'_sorted_PFSS_data.cdf'
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
     # breakpoint()
     
-    PSP_pos_data = pyt.get_data('PSP_Rs')
+    PSP_pos_data = pys.get_data('PSP_Rs')
     PSP_Rs_time = PSP_pos_data[0]
     PSP_Rs = PSP_pos_data[1]*u.solRad
     
-    rss_data = pyt.get_data('rss')
+    rss_data = pys.get_data('rss')
     rss = rss_data[0][0]
     
-    Vsw_Rs_data = pyt.get_data('Vsw_Rs')
+    Vsw_Rs_data = pys.get_data('Vsw_Rs')
     Vsw_Rs = Vsw_Rs_data[1]*u.solRad/u.s
     
-    Tp_data = pyt.get_data('Temp_p')
+    Tp_data = pys.get_data('Temp_p')
     Tp_time = Tp_data[0]
     Tp = Tp_data*u.eV
     
-    lon_data = pyt.get_data('solar_lon')
+    lon_data = pys.get_data('solar_lon')
     lon_time = lon_data[0]
     carrington_foot_lon = lon_data[1]
     
-    lat_data = pyt.get_data('solar_lat')
+    lat_data = pys.get_data('solar_lat')
     lat_time = lat_data[0]
     carrington_foot_lat = lat_data[1]
     
-    nq_lon_data = pyt.get_data('nq_solar_lon') #non_quiescent data for footpoint longitude
+    nq_lon_data = pys.get_data('nq_solar_lon') #non_quiescent data for footpoint longitude
     nq_carrington_foot_lon = nq_lon_data[1]
     
-    nq_lat_data = pyt.get_data('nq_solar_lat') #non_quiescent data for footpoint latittude
+    nq_lat_data = pys.get_data('nq_solar_lat') #non_quiescent data for footpoint latittude
     nq_lat_time = nq_lat_data[0]
     nq_carrington_foot_lat = nq_lat_data[1]
     
-    q_lon_data = pyt.get_data('q_solar_lon') #non_quiescent data for footpoint longitude
+    q_lon_data = pys.get_data('q_solar_lon') #non_quiescent data for footpoint longitude
     q_carrington_foot_lon = q_lon_data[1]
     
-    q_lat_data = pyt.get_data('q_solar_lat') #non_quiescent data for footpoint latittude
+    q_lat_data = pys.get_data('q_solar_lat') #non_quiescent data for footpoint latittude
     q_lat_time = q_lat_data[0]
     q_carrington_foot_lat = q_lat_data[1]
     
@@ -2886,7 +2886,7 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         v_max_err = Vsw_kms*(1+V_err)
         v_min_err = Vsw_kms*(1-V_err)
         # Fit a T0 for each observation
-        sys.path.append('/Users/besh2109/GitHub/psp_python')
+        sys.path.append('/Users/besh2109/GitHub/psp_pyshon')
         # T0_fitted_slow = fit_T0(r_obs, v_obs)
         
         fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_'+model+'.cdf'
@@ -2894,17 +2894,17 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         
         if os.path.exists(fit_T0_savepath+fit_T0_savename):
             print(f"The file {fit_T0_savename} exists.")
-            pyt.tplot_restore(fit_T0_savepath+fit_T0_savename)
+            pys.tplot_restore(fit_T0_savepath+fit_T0_savename)
             
-            T0_data = pyt.get_data(model+'_T0_coronal_temp_fit')
+            T0_data = pys.get_data(model+'_T0_coronal_temp_fit')
             T0_fitted_time = T0_data[0]
             T0_fitted = T0_data[1]
             
-            T0_max_data = pyt.get_data(model+'_T0_coronal_temp_fit_max_err')
+            T0_max_data = pys.get_data(model+'_T0_coronal_temp_fit_max_err')
             T0_max_fitted_time = T0_max_data[0]
             T0_max_fitted = T0_max_data[1]
             
-            T0_min_data = pyt.get_data(model+'_T0_coronal_temp_fit_min_err')
+            T0_min_data = pys.get_data(model+'_T0_coronal_temp_fit_min_err')
             T0_min_fitted_time = T0_min_data[0]
             T0_min_fitted = T0_min_data[1]
             
@@ -2922,17 +2922,17 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
             print(f"The file {fit_T0_savename} does not exist.")
             
             T0_fitted = utils.fit_T0_parallel(r_obs, v_obs)
-            pyt.store_data(model+"_T0_coronal_temp_fit", data={'x':lat_time, 'y':T0_fitted})
+            pys.store_data(model+"_T0_coronal_temp_fit", data={'x':lat_time, 'y':T0_fitted})
             
             T0_max_fitted = utils.fit_T0_parallel(r_obs, v_max_err)
-            pyt.store_data(model+"_T0_coronal_temp_fit_max_err", data={'x':lat_time, 'y':T0_max_fitted})
+            pys.store_data(model+"_T0_coronal_temp_fit_max_err", data={'x':lat_time, 'y':T0_max_fitted})
             
             T0_min_fitted = utils.fit_T0_parallel(r_obs, v_min_err)
-            pyt.store_data(model+"_T0_coronal_temp_fit_min_err", data={'x':lat_time, 'y':T0_min_fitted})
+            pys.store_data(model+"_T0_coronal_temp_fit_min_err", data={'x':lat_time, 'y':T0_min_fitted})
             
             cdf_var = [model+"_T0_coronal_temp_fit",model+"_T0_coronal_temp_fit_max_err",model+"_T0_coronal_temp_fit_min_err"]
             
-            pyt.tplot_save(cdf_var,fit_T0_savepath+fit_T0_savename)
+            pys.tplot_save(cdf_var,fit_T0_savepath+fit_T0_savename)
             
         # breakpoint()
         #------------Assign a launch velocity to each temperature---------------#
@@ -3123,7 +3123,7 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         
     if save:
         
-        pyt.del_data()
+        pys.del_data()
         
         save_name = 'Enc_'+str(enc)+'_good_observations.cdf'
         save_path = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/raphael_times/'
@@ -3138,14 +3138,14 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         tplot_r0_Rs = PSP_Rs
         tplot_rss = np.array([rss])
         
-        pyt.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #total solar longitude
-        pyt.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
-        pyt.store_data("sdo_obs_time",data={'psp_time':t_tplot_time,'y':t_tplot_obs_time})
-        pyt.store_data("sdo_obs_time_max_err",data={'psp_time':t_tplot_time,'y':t_tplot_obs_time_max_err})
-        pyt.store_data("sdo_obs_time_min_err",data={'psp_time':t_tplot_time,'y':t_tplot_obs_time_min_err})
+        pys.store_data("solar_lon", data={'x':t_tplot_time, 'y':t_tplot_sol_lon}) #total solar longitude
+        pys.store_data("solar_lat", data={'x':t_tplot_time, 'y':t_tplot_sol_lat})
+        pys.store_data("sdo_obs_time",data={'psp_time':t_tplot_time,'y':t_tplot_obs_time})
+        pys.store_data("sdo_obs_time_max_err",data={'psp_time':t_tplot_time,'y':t_tplot_obs_time_max_err})
+        pys.store_data("sdo_obs_time_min_err",data={'psp_time':t_tplot_time,'y':t_tplot_obs_time_min_err})
         
-        pyt.store_data("PSP_Rs", data={'x':t_tplot_time, 'y':tplot_r0_Rs})
-        pyt.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
+        pys.store_data("PSP_Rs", data={'x':t_tplot_time, 'y':tplot_r0_Rs})
+        pys.store_data("rss",data={'x':tplot_rss, 'y':tplot_rss})
         
         #--- quiescent ---#
         
@@ -3156,11 +3156,11 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         q_tplot_sdo_obs_time_max_err = q_sdo_obs_time_max_err
         q_tplot_sdo_obs_time_min_err = q_sdo_obs_time_min_err
         
-        pyt.store_data("q_solar_lon", data={'x':q_tplot_time, 'y':q_tplot_sol_lon}) #quiescent solar longitude
-        pyt.store_data("q_solar_lat", data={'x':q_tplot_time, 'y':q_tplot_sol_lat})
-        pyt.store_data("q_sdo_obs_time", data={'psp_time':q_tplot_time,'y':q_tplot_sdo_obs_time})
-        pyt.store_data("q_sdo_obs_time_max_err", data={'psp_time':q_tplot_time,'y':q_tplot_sdo_obs_time_max_err})
-        pyt.store_data("q_sdo_obs_time_min_err", data={'psp_time':q_tplot_time,'y':q_tplot_sdo_obs_time_min_err})
+        pys.store_data("q_solar_lon", data={'x':q_tplot_time, 'y':q_tplot_sol_lon}) #quiescent solar longitude
+        pys.store_data("q_solar_lat", data={'x':q_tplot_time, 'y':q_tplot_sol_lat})
+        pys.store_data("q_sdo_obs_time", data={'psp_time':q_tplot_time,'y':q_tplot_sdo_obs_time})
+        pys.store_data("q_sdo_obs_time_max_err", data={'psp_time':q_tplot_time,'y':q_tplot_sdo_obs_time_max_err})
+        pys.store_data("q_sdo_obs_time_min_err", data={'psp_time':q_tplot_time,'y':q_tplot_sdo_obs_time_min_err})
         
         #---non quiescent---#
         
@@ -3171,11 +3171,11 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         nq_tplot_sdo_obs_time_max_err = nq_sdo_obs_time_max_err
         nq_tplot_sdo_obs_time_min_err = nq_sdo_obs_time_min_err
         
-        pyt.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
-        pyt.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
-        pyt.store_data("nq_sdo_obs_time", data={'psp_time':nq_tplot_time,'y':nq_tplot_sdo_obs_time})
-        pyt.store_data("nq_sdo_obs_time_max_err", data={'psp_time':nq_tplot_time,'y':nq_tplot_sdo_obs_time_max_err})
-        pyt.store_data("nq_sdo_obs_time_min_err", data={'psp_time':nq_tplot_time,'y':nq_tplot_sdo_obs_time_min_err})
+        pys.store_data("nq_solar_lon", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lon}) #non quiescent solar longitude
+        pys.store_data("nq_solar_lat", data={'x':nq_tplot_time, 'y':nq_tplot_sol_lat})
+        pys.store_data("nq_sdo_obs_time", data={'psp_time':nq_tplot_time,'y':nq_tplot_sdo_obs_time})
+        pys.store_data("nq_sdo_obs_time_max_err", data={'psp_time':nq_tplot_time,'y':nq_tplot_sdo_obs_time_max_err})
+        pys.store_data("nq_sdo_obs_time_min_err", data={'psp_time':nq_tplot_time,'y':nq_tplot_sdo_obs_time_min_err})
         
         #------good times------#
         
@@ -3186,11 +3186,11 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         t_tplot_good_obs_time_max_err = sdo_good_time_max_err
         t_tplot_good_obs_time_min_err = sdo_good_time_min_err
         
-        pyt.store_data("good_solar_lon", data={'x':t_tplot_good_time, 'y':t_tplot_good_sol_lon}) #total solar longitude
-        pyt.store_data("good_solar_lat", data={'x':t_tplot_good_time, 'y':t_tplot_good_sol_lat})
-        pyt.store_data("good_sdo_obs_time",data={'psp_time':t_tplot_good_time,'y':t_tplot_good_obs_time})
-        pyt.store_data("good_sdo_obs_time_max_err",data={'psp_time':t_tplot_good_time,'y':t_tplot_good_obs_time_max_err})
-        pyt.store_data("good_sdo_obs_time_min_err",data={'psp_time':t_tplot_good_time,'y':t_tplot_good_obs_time_min_err})
+        pys.store_data("good_solar_lon", data={'x':t_tplot_good_time, 'y':t_tplot_good_sol_lon}) #total solar longitude
+        pys.store_data("good_solar_lat", data={'x':t_tplot_good_time, 'y':t_tplot_good_sol_lat})
+        pys.store_data("good_sdo_obs_time",data={'psp_time':t_tplot_good_time,'y':t_tplot_good_obs_time})
+        pys.store_data("good_sdo_obs_time_max_err",data={'psp_time':t_tplot_good_time,'y':t_tplot_good_obs_time_max_err})
+        pys.store_data("good_sdo_obs_time_min_err",data={'psp_time':t_tplot_good_time,'y':t_tplot_good_obs_time_min_err})
         
         #------quiescent good times------#
         
@@ -3201,11 +3201,11 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         q_tplot_sdo_obs_good_time_max_err = q_sdo_obs_good_time_max_err
         q_tplot_sdo_obs_good_time_min_err = q_sdo_obs_good_time_min_err
         
-        pyt.store_data("q_good_solar_lon", data={'x':q_tplot_good_time, 'y':q_tplot_good_sol_lon}) #quiescent solar longitude
-        pyt.store_data("q_good_solar_lat", data={'x':q_tplot_good_time, 'y':q_tplot_good_sol_lat})
-        pyt.store_data("q_good_sdo_obs_time", data={'psp_time':q_tplot_good_time,'y':q_tplot_sdo_obs_good_time})
-        pyt.store_data("q_good_sdo_obs_time_max_err", data={'psp_time':q_tplot_good_time,'y':q_tplot_sdo_obs_good_time_max_err})
-        pyt.store_data("q_good_sdo_obs_time_min_err", data={'psp_time':q_tplot_good_time,'y':q_tplot_sdo_obs_good_time_min_err})
+        pys.store_data("q_good_solar_lon", data={'x':q_tplot_good_time, 'y':q_tplot_good_sol_lon}) #quiescent solar longitude
+        pys.store_data("q_good_solar_lat", data={'x':q_tplot_good_time, 'y':q_tplot_good_sol_lat})
+        pys.store_data("q_good_sdo_obs_time", data={'psp_time':q_tplot_good_time,'y':q_tplot_sdo_obs_good_time})
+        pys.store_data("q_good_sdo_obs_time_max_err", data={'psp_time':q_tplot_good_time,'y':q_tplot_sdo_obs_good_time_max_err})
+        pys.store_data("q_good_sdo_obs_time_min_err", data={'psp_time':q_tplot_good_time,'y':q_tplot_sdo_obs_good_time_min_err})
         
         #------nonquiescent good times-------#
         
@@ -3216,11 +3216,11 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
         nq_tplot_sdo_obs_good_time_max_err = nq_sdo_obs_good_time_max_err
         nq_tplot_sdo_obs_good_time_min_err = nq_sdo_obs_good_time_min_err
         
-        pyt.store_data("nq_good_solar_lon", data={'x':nq_tplot_good_time, 'y':nq_tplot_good_sol_lon}) #non quiescent solar longitude
-        pyt.store_data("nq_good_solar_lat", data={'x':nq_tplot_good_time, 'y':nq_tplot_good_sol_lat})
-        pyt.store_data("nq_good_sdo_obs_time", data={'psp_time':nq_tplot_good_time,'y':nq_tplot_sdo_obs_good_time})
-        pyt.store_data("nq_good_sdo_obs_time_max_err", data={'psp_time':nq_tplot_good_time,'y':nq_tplot_sdo_obs_good_time_max_err})
-        pyt.store_data("nq_good_sdo_obs_time_min_err", data={'psp_time':nq_tplot_good_time,'y':nq_tplot_sdo_obs_good_time_min_err})
+        pys.store_data("nq_good_solar_lon", data={'x':nq_tplot_good_time, 'y':nq_tplot_good_sol_lon}) #non quiescent solar longitude
+        pys.store_data("nq_good_solar_lat", data={'x':nq_tplot_good_time, 'y':nq_tplot_good_sol_lat})
+        pys.store_data("nq_good_sdo_obs_time", data={'psp_time':nq_tplot_good_time,'y':nq_tplot_sdo_obs_good_time})
+        pys.store_data("nq_good_sdo_obs_time_max_err", data={'psp_time':nq_tplot_good_time,'y':nq_tplot_sdo_obs_good_time_max_err})
+        pys.store_data("nq_good_sdo_obs_time_min_err", data={'psp_time':nq_tplot_good_time,'y':nq_tplot_sdo_obs_good_time_min_err})
         
         #-----coronal temperature-------#
         
@@ -3236,11 +3236,11 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
             
         attr_dict = {'units': 'MK'}
         
-        pyt.store_data("T0_coronal_temp_fit",data={'x':t_tplot_time,'y':tplot_T0}, attr_dict=attr_dict)
+        pys.store_data("T0_coronal_temp_fit",data={'x':t_tplot_time,'y':tplot_T0}, attr_dict=attr_dict)
         
-        pyt.store_data("T0_coronal_temp_fit_max", data={'x':t_tplot_time, 'y':tplot_T0_max}, attr_dict=attr_dict)
+        pys.store_data("T0_coronal_temp_fit_max", data={'x':t_tplot_time, 'y':tplot_T0_max}, attr_dict=attr_dict)
         
-        pyt.store_data("T0_coronal_temp_fit_min", data={'x':t_tplot_time, 'y':tplot_T0_min}, attr_dict=attr_dict)
+        pys.store_data("T0_coronal_temp_fit_min", data={'x':t_tplot_time, 'y':tplot_T0_min}, attr_dict=attr_dict)
         
         #----------------------#
     
@@ -3250,7 +3250,7 @@ def find_data_for_supergranule(t0='2020-01-29',tf=None,enc=None,save_coords=Fals
                         "q_good_solar_lon","q_good_solar_lat","q_good_sdo_obs_time","q_good_sdo_obs_time_max_err","q_good_sdo_obs_time_min_err",
                         "nq_good_solar_lon","nq_good_solar_lat","nq_good_sdo_obs_time","nq_good_sdo_obs_time_max_err","nq_good_sdo_obs_time_min_err"]
         
-        pyt.tplot_save(cdf_var_list,save_path+save_name)
+        pys.tplot_save(cdf_var_list,save_path+save_name)
 
         #------------------- group good quiescent points into continuous regions --------------------------#
         
@@ -3487,25 +3487,25 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=F
         
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/'
 
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
 
-    rss_data = pyt.get_data('rss')
+    rss_data = pys.get_data('rss')
     rss = rss_data[0]
     rss = rss[0]
     
-    carr_lon_data = pyt.get_data('PSP_lon')
+    carr_lon_data = pys.get_data('PSP_lon')
     carr_lon_time = carr_lon_data[0]
     carr_lon = carr_lon_data[1]
     
-    carr_lat_data = pyt.get_data('PSP_lat')
+    carr_lat_data = pys.get_data('PSP_lat')
     carr_lat = carr_lat_data[1]
     
     sintheta = np.sin((90-carr_lat)*np.pi/180) #sin of the azimuthal angle, which is 90 degrees minus the latitude
     
-    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_data = pys.get_data('PSP_Rs')
     r0_Rs = r0_Rs_data[1]
     
-    Vsw_Rs_data = pyt.get_data('Vsw_Rs')
+    Vsw_Rs_data = pys.get_data('Vsw_Rs')
     Vsw_Rs = Vsw_Rs_data[1]
     
     
@@ -3514,7 +3514,7 @@ def quiescent_plots(t0='2020-01-29',tf=None,enc=None,enc_radius=65,save_coords=F
 
     
     psp.fields(trange=[t0p,tfp], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
-    pos_data = pyt.get_data('position')
+    pos_data = pys.get_data('position')
     
     pos_data_arr = pos_data[1]
     
@@ -4199,7 +4199,7 @@ def footpoint_velocity(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rlim
     if save:
         tplot_savename = 'Enc_'+str(enc)+'_'
         
-        pyt.store_data('footpoint_velocity',{'x':timestamps,'y':vel_interp})
+        pys.store_data('footpoint_velocity',{'x':timestamps,'y':vel_interp})
         
     if return_nums:
         return q_durations, mean_q_vel, med_q_vel, q_vel, nq_vel
@@ -4225,7 +4225,7 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
     #------position data importing------#
 
     psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True) #going to be used to plot parker position
-    pos_data = pyt.get_data('position')
+    pos_data = pys.get_data('position')
     
     pos_time_arr = pos_data[0]
     pos_data_arr = pos_data[1]
@@ -4245,10 +4245,10 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
     
     psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
         
-    spc_data = pyt.get_data('psp_spc_vp_fit_RTN')
+    spc_data = pys.get_data('psp_spc_vp_fit_RTN')
     
     if spc_data == None:
-        spc_data = pyt.get_data('spp_spc_vp_fit_RTN')
+        spc_data = pys.get_data('spp_spc_vp_fit_RTN')
 
     spc_time_arr = spc_data[0]
     spc_data_arr = spc_data[1]
@@ -4268,7 +4268,7 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
     spc_time_arr = spc_time_down
     vr_spc = spc_v_down
     
-    spc_temp_data = pyt.get_data('psp_spc_wp1_fit')
+    spc_temp_data = pys.get_data('psp_spc_wp1_fit')
     
     spc_temp_time_arr = spc_temp_data[0]
     spc_temp_data_arr = spc_temp_data[1]
@@ -4291,14 +4291,14 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
     
     psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
 
-    vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    vel_data = pys.get_data('psp_spi_VEL_RTN_SUN')
     
     spi_time_arr = vel_data[0]
     spi_data_arr = vel_data[1]
     
     vr_spi = spi_data_arr[:,0]
     
-    temp_data = pyt.get_data('psp_spi_TEMP')
+    temp_data = pys.get_data('psp_spi_TEMP')
     
     spi_temp_data_arr = temp_data[1]
     
@@ -4377,27 +4377,27 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
     
     #---------------------------------------#
     fit_T0_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/fit_T0/'
-    sys.path.append('/Users/besh2109/GitHub/psp_python')
+    sys.path.append('/Users/besh2109/GitHub/psp_pyshon')
     
     if model=='iso':
     
         fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_iso.cdf'
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_obs,T_obs,gamma,model)
-        pyt.store_data("iso_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("iso_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("iso_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("iso_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_max_err,T_obs,gamma,model)
-        pyt.store_data("iso_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("iso_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("iso_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("iso_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_min_err,T_obs,gamma,model)
-        pyt.store_data("iso_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("iso_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("iso_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("iso_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
               
-        pyt.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
-        pyt.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
-        pyt.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
+        pys.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
+        pys.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
+        pys.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
         
         cdf_var = ["iso_T0_coronal_temp_fit","iso_T0_coronal_temp_fit_max_err","iso_T0_coronal_temp_fit_min_err",
                    "iso_r2_scores","iso_r2_scores_max_err","iso_r2_scores_min_err",
@@ -4408,20 +4408,20 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
         fit_T0_savename = 'Enc_'+str(enc)+'_fit_T0_poly.cdf'
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_obs,T_obs,gamma,model)
-        pyt.store_data("poly_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("poly_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("poly_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("poly_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_max_err,T_obs,gamma_max,model)
-        pyt.store_data("poly_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("poly_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("poly_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("poly_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_min_err,T_obs,gamma_min,model)
-        pyt.store_data("poly_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("poly_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("poly_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("poly_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
         
-        pyt.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
-        pyt.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
-        pyt.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
+        pys.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
+        pys.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
+        pys.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
         
         cdf_var = ["poly_T0_coronal_temp_fit","poly_T0_coronal_temp_fit_max_err","poly_T0_coronal_temp_fit_min_err"
                    "poly_r2_scores","poly_r2_scores_max_err","poly_r2_scores_min_err",
@@ -4434,31 +4434,31 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_obs,T_obs,gamma,model)
         # T0_fitted,r2_fitted = utils.fit_T0_sequential(r_obs, v_obs,T_obs,gamma,model)
-        pyt.store_data("isolayer_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("isolayer_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("isolayer_T0_coronal_temp_fit", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("isolayer_r2_scores", data={'x':r0_time_arr, 'y':r2_fitted})
         
         K = T_obs/(r_obs**(-(2*(gamma-1))))
         r_iso_fitted = (T0_fitted/K)**(-1/(2*(gamma-1)))
-        pyt.store_data("isothermal_layer_height", data={'x':r0_time_arr, 'y':r_iso_fitted})
+        pys.store_data("isothermal_layer_height", data={'x':r0_time_arr, 'y':r_iso_fitted})
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_max_err,T_obs,gamma_max,model)
-        pyt.store_data("isolayer_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("isolayer_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("isolayer_T0_coronal_temp_fit_max_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("isolayer_r2_scores_max_err", data={'x':r0_time_arr, 'y':r2_fitted})
         K = T_obs/(r_obs**(-(2*(gamma_max-1))))
         r_iso_fitted = (T0_fitted/K)**(-1/(2*(gamma_max-1)))
-        pyt.store_data("isothermal_layer_height_max_err", data={'x':r0_time_arr, 'y':r_iso_fitted})
+        pys.store_data("isothermal_layer_height_max_err", data={'x':r0_time_arr, 'y':r_iso_fitted})
 
         
         T0_fitted,r2_fitted = utils.fit_T0_parallel(r_obs, v_min_err,T_obs,gamma_min,model)
-        pyt.store_data("isolayer_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
-        pyt.store_data("isolayer_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
+        pys.store_data("isolayer_T0_coronal_temp_fit_min_err", data={'x':r0_time_arr, 'y':T0_fitted})
+        pys.store_data("isolayer_r2_scores_min_err", data={'x':r0_time_arr, 'y':r2_fitted})
         K = T_obs/(r_obs**(-(2*(gamma-1))))
         r_iso_fitted = (T0_fitted/K)**(-1/(2*(gamma_min-1)))
-        pyt.store_data("isothermal_layer_height_min_err", data={'x':r0_time_arr, 'y':r_iso_fitted})
+        pys.store_data("isothermal_layer_height_min_err", data={'x':r0_time_arr, 'y':r_iso_fitted})
 
-        pyt.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
-        pyt.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
-        pyt.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
+        pys.store_data('PSP_Rs', data={'x':r0_time_arr, 'y':r0_Rs})
+        pys.store_data('Vsw_km', data={'x':r0_time_arr, 'y':v_obs.value})
+        pys.store_data('Tp_MK', data={'x':r0_time_arr, 'y':T_obs.value})
         
         cdf_var = ["isolayer_T0_coronal_temp_fit","isolayer_T0_coronal_temp_fit_max_err","isolayer_T0_coronal_temp_fit_min_err",
                    "isothermal_layer_height","isothermal_layer_height_max_err","isothermal_layer_height_min_err",
@@ -4466,7 +4466,7 @@ def fit_parker_solution(t0='2020-01-29',tf=None,enc=None,save=True,plot=True,rli
                    "PSP_Rs","Vsw_km","Tp_MK"]
     
         
-    pyt.tplot_save(cdf_var,fit_T0_savepath+fit_T0_savename)
+    pys.tplot_save(cdf_var,fit_T0_savepath+fit_T0_savename)
     
 def parker_solution_plot(enc,model='iso',save=True,err=None):
     
@@ -4477,19 +4477,19 @@ def parker_solution_plot(enc,model='iso',save=True,err=None):
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
     
-    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_data = pys.get_data('solar_lon')
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
 
     
-    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_data = pys.get_data('solar_lat')
     # sol_lat_time = sol_lat_data[0]
     sol_lat = sol_lat_data[1]
     
-    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_data = pys.get_data('PSP_Rs')
     r0_Rs_time = r0_Rs_data[0]
     r0_Rs = r0_Rs_data[1]
     
@@ -4652,33 +4652,33 @@ def delta_d(enc):
     tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/pfss_outs/footpoints/'
     #------------------------------ Read in Tplot Variables ----------------------------------#
     
-    pyt.tplot_restore(tplot_savepath+tplot_savename)
+    pys.tplot_restore(tplot_savepath+tplot_savename)
     
-    solar_lon_data = pyt.get_data('solar_lon')
+    solar_lon_data = pys.get_data('solar_lon')
     solar_lon_time = solar_lon_data[0]
     sol_lon = solar_lon_data[1]
     
-    solar_lon_max_err_data = pyt.get_data('solar_lon_err_max')
+    solar_lon_max_err_data = pys.get_data('solar_lon_err_max')
     # solar_lon_time = solar_lon_max_err_data[0]
     sol_lon_max_err = solar_lon_max_err_data[1]
     
-    solar_lon_min_err_data = pyt.get_data('solar_lon_err_min')
+    solar_lon_min_err_data = pys.get_data('solar_lon_err_min')
     # solar_lon_time = solar_lon_max_err_data[0]
     sol_lon_min_err = solar_lon_min_err_data[1]
     
-    sol_lat_data = pyt.get_data('solar_lat')
+    sol_lat_data = pys.get_data('solar_lat')
     # sol_lat_time = sol_lat_data[0]
     sol_lat = sol_lat_data[1]
         
-    sol_lat_max_err_data = pyt.get_data('solar_lat_err_max')
+    sol_lat_max_err_data = pys.get_data('solar_lat_err_max')
     # sol_lat_time = sol_lat_data[0]
     sol_lat_max_err = sol_lat_max_err_data[1]
     
-    sol_lat_min_err_data = pyt.get_data('solar_lat_err_min')
+    sol_lat_min_err_data = pys.get_data('solar_lat_err_min')
     # sol_lat_time = sol_lat_data[0]
     sol_lat_min_err = sol_lat_min_err_data[1]
     
-    r0_Rs_data = pyt.get_data('PSP_Rs')
+    r0_Rs_data = pys.get_data('PSP_Rs')
     r0_Rs_time = r0_Rs_data[0]
     r0_Rs = r0_Rs_data[1]
     

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env pyshon3
 # -*- coding: utf-8 -*-
 """
 Created on Tue Jun 14 08:15:52 2022
@@ -7,40 +7,26 @@ Created on Tue Jun 14 08:15:52 2022
 """
 
 import os
-import pyspedas.psp as psp
+import pyspedas.projects.psp as psp
 import pyspedas as pys
 import matplotlib.pyplot as plt
 import numpy as np
-import pytplot as pyt
 from scipy.interpolate import interp1d
-# from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
-# from datetime import date
-# from matplotlib import ticker
-# from statistics import median
-# from mpl_toolkits.axes_grid1 import make_axes_locatable
-# import gc
-# import math
 import random
-# import cartopy.crs as ccrs
-# import pyspedas.stereo as ste
-# from matplotlib import gridspec
 import time
-import pickle as pkl
 
 from .config import CONFIG
 from .config import enc_flt
 from .config import per_flt
 from .config import per_dist_lst
 
-from findpeaks import findpeaks
-from scipy.interpolate import UnivariateSpline
 
 import pandas as pd
 
 import matplotlib.colors
-import dateutil.parser
 
 import psp_regions.utils as utils
+from pathlib import Path
 # import matplotlib.pyplot as plt
 
 
@@ -50,8 +36,8 @@ fields_pass = os.environ['PSP_FIELDS_PW']
 # sweap_id = os.environ['PSP_SWEAP_ID']
 # sweap_pass = os.environ['PSP_SWEAP_PW']
 
-sweap_id = os.environ['PSP_SWEAP_ID_berk']
-sweap_pass = os.environ['PSP_SWEAP_PW_berk']
+sweap_id = os.environ['PSP_SWEAP_ID_BERK']
+sweap_pass = os.environ['PSP_SWEAP_PW_BERK']
 
 jsoc_email = os.environ['JSOC_EMAIL']
 
@@ -205,8 +191,8 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
     enc_num = enc_start
     
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -242,7 +228,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
         
         title = 'Encounter '+str(enc_num)+': '+t0p[0:20]+' to '+tfp[0:20]
         
-        z_save_path = '/Users/besh2109/Documents/z_save/tplot/'
+        z_save_path = str(Path('~/Documents/z_save/tplot/').expanduser())
         z_save_name = 'z_tplot_enc'+str(enc_num)+'.cdf'
         
         filecheck = os.path.isfile(z_save_path+z_save_name)
@@ -250,31 +236,31 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
         # breakpoint()
         
         if filecheck:
-            pyt.tplot_restore(z_save_path+z_save_name)
+            pys.tplot_restore(z_save_path+z_save_name)
             
-            z_data = pyt.get_data('z')
+            z_data = pys.get_data('z')
             z_time = z_data[0]
             z = z_data[1]
             
-            quiet_z_data = pyt.get_data('quiet_z')
+            quiet_z_data = pys.get_data('quiet_z')
             quiet_z = quiet_z_data[1]
             
-            b_data = pyt.get_data('Br')
+            b_data = pys.get_data('Br')
             b_time = b_data[0]
             Br = b_data[1]
             
-            quiet_B_data = pyt.get_data('quiet_B')
+            quiet_B_data = pys.get_data('quiet_B')
             quiet_B = quiet_B_data[0]
             B_mag = quiet_B_data[1]
             
-            carr_data = pyt.get_data('carr_lon')
+            carr_data = pys.get_data('carr_lon')
             carr_time = carr_data[0]
             carr_long = carr_data[1]
             
-            carr_data = pyt.get_data('carr_lat')
+            carr_data = pys.get_data('carr_lat')
             carr_lat = carr_data[1]
             
-            carr_data = pyt.get_data('carr_dif')
+            carr_data = pys.get_data('carr_dif')
             carr_dif = carr_data[1]
             
         else:
@@ -373,7 +359,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
                 i_max = len(carr_time) #maximum index, i 
                 wndw_bars = np.array(carr_time[0])
                 
-                csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/longitude_regions/'
+                csv_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/longitude_regions/').expanduser())
                 csv_savename = 'enc_'+str(enc_num)+'_quiescent_longitude.csv'
                 
                 carr_int = 0
@@ -413,7 +399,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
                 i_max = len(z_time)
                 # wndw_bars = np.array(z_time[0])
                 
-                csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/time_regions/'
+                csv_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/time_regions/').expanduser())
                 csv_savename = 'enc_'+str(enc_num)+'_quiescent_time.csv'
                 
                 bin_size = i_max/500
@@ -456,7 +442,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
                     i_max = len(z_time)
                     # wndw_bars_i = np.array(z_time[0])
                     
-                    # csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/random_regions/'
+                    # csv_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/random_regions/').expanduser())
                     # csv_savename = 'enc_'+str(enc_num)+'_quiescent_random.csv'
                     
                     bins = np.array([0])
@@ -662,7 +648,7 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
         # plt.show()
         
         tplot_savename = 'Enc_'+str(enc_num)+'_quiescent_flags.cdf'
-        tplot_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/'
+        tplot_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/').expanduser())
 
         tplot_time = z_time
         tplot_z = z
@@ -679,38 +665,38 @@ def quiescent_id(analysis='all', mode='csv',runs=20,enc_start=1,enc_end=13,thres
         run_count = np.array([runs])
         # breakpoint()
         
-        pyt.store_data("z", data={'x':tplot_time, 'y':tplot_z})
+        pys.store_data("z", data={'x':tplot_time, 'y':tplot_z})
         
-        pyt.store_data("B_mag",data={'x':b_time,'y':B_mag})
+        pys.store_data("B_mag",data={'x':b_time,'y':B_mag})
         
-        pyt.store_data("Br", data={'x':b_time, 'y':Br})
+        pys.store_data("Br", data={'x':b_time, 'y':Br})
         # print(1)
-        pyt.store_data("qual_l", data={'x':tplot_time, 'y':tplot_qual_l})
+        pys.store_data("qual_l", data={'x':tplot_time, 'y':tplot_qual_l})
         # print(2)
-        pyt.store_data("qual_t", data={'x':tplot_time, 'y':tplot_qual_t})
+        pys.store_data("qual_t", data={'x':tplot_time, 'y':tplot_qual_t})
         # print(3)
-        pyt.store_data("qual_r", data={'x':tplot_time, 'y':tplot_qual_r})
+        pys.store_data("qual_r", data={'x':tplot_time, 'y':tplot_qual_r})
         
-        pyt.store_data("qual_r_one", data={'x':tplot_time, 'y':tplot_qual_r_one})
+        pys.store_data("qual_r_one", data={'x':tplot_time, 'y':tplot_qual_r_one})
         
-        pyt.store_data("qual_r_five", data={'x':tplot_time, 'y':tplot_qual_r_five})
+        pys.store_data("qual_r_five", data={'x':tplot_time, 'y':tplot_qual_r_five})
         
         # print(4)
         
-        pyt.store_data("carr_coords", data={'x':tplot_carr_time, 'y':np.transpose(tplot_carr)})
+        pys.store_data("carr_coords", data={'x':tplot_carr_time, 'y':np.transpose(tplot_carr)})
         # print(5)
         
-        pyt.store_data("bins_l",data={'x':bin_store_l, 'y':bin_store_l})
+        pys.store_data("bins_l",data={'x':bin_store_l, 'y':bin_store_l})
         # print(6)
-        pyt.store_data("bins_t",data={'x':bin_store_t, 'y':bin_store_t})
+        pys.store_data("bins_t",data={'x':bin_store_t, 'y':bin_store_t})
         # print(7)
-        pyt.store_data("bins_r_last",data={'x':bin_store_r, 'y':bin_store_r}) #stores last random bin set
+        pys.store_data("bins_r_last",data={'x':bin_store_r, 'y':bin_store_r}) #stores last random bin set
         # print(8)
-        pyt.store_data("run_count",data={'x':run_count, 'y':run_count})
+        pys.store_data("run_count",data={'x':run_count, 'y':run_count})
         
         cdf_var_list = ["z","B_mag","Br","qual_l","qual_t","qual_r","qual_r_one","qual_r_five","carr_coords","bins_l","bins_t","bins_r_last","run_count"]
         
-        pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
+        pys.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
         
         
         if full_run: #if you specify full run, this routine will go ahead and write results to csv.
@@ -729,46 +715,46 @@ def quiescent_id_thresh(enc='all',kind='rand',thresh=0.5,split_num=6,mode='solop
     
     for i in enc:
         
-        tplot_filepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/'
+        tplot_filepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/').expanduser())
         tplot_filename = 'Enc_'+str(i)+'_quiescent_flags.cdf'
         
-        # pyt.tplot_names()
+        # pys.tplot_names()
         
-        pyt.tplot_restore(tplot_filepath+tplot_filename)
+        pys.tplot_restore(tplot_filepath+tplot_filename)
         
-        run_data = pyt.get_data('run_count')
+        run_data = pys.get_data('run_count')
         runs = run_data[0]
         
-        z_data = pyt.get_data('z')
+        z_data = pys.get_data('z')
         
         z_time = z_data[0]
         z = z_data[1]
         
-        b_mag_data = pyt.get_data('B_mag')
+        b_mag_data = pys.get_data('B_mag')
         
         b_mag_time = b_mag_data[0]
         b_mag = b_mag_data[1]
         
-        b_data = pyt.get_data('Br')
+        b_data = pys.get_data('Br')
         
         b_time = b_data[0]
         Br = b_data[1]
         
-        qual_r_data = pyt.get_data('qual_r')
+        qual_r_data = pys.get_data('qual_r')
         
         qual_r_time = qual_r_data[0]
         qual_r = qual_r_data[1]
         
         qual_r_where = np.where((qual_r>thresh))#&((z<0.05)|(z>0.95)))
 
-        qual_l_data = pyt.get_data('qual_l')
+        qual_l_data = pys.get_data('qual_l')
         
         qual_l_time = qual_l_data[0]
         qual_l = qual_l_data[1]
         
         qual_l_where = np.where(qual_l>thresh)
         
-        qual_t_data = pyt.get_data('qual_t')
+        qual_t_data = pys.get_data('qual_t')
         
         qual_t_time = qual_t_data[0]
         qual_t = qual_t_data[1]
@@ -777,11 +763,11 @@ def quiescent_id_thresh(enc='all',kind='rand',thresh=0.5,split_num=6,mode='solop
         
         
         
-        qual_r_one_data = pyt.get_data('qual_r_one')
+        qual_r_one_data = pys.get_data('qual_r_one')
         qual_r_one_time = qual_r_one_data[0]
         qual_r_one = qual_r_one_data[1]
         
-        qual_r_five_data = pyt.get_data('qual_r_five')
+        qual_r_five_data = pys.get_data('qual_r_five')
         qual_r_five_time = qual_r_five_data[0]
         qual_r_five = qual_r_five_data[1]
         
@@ -1113,7 +1099,7 @@ def quiescent_id_thresh(enc='all',kind='rand',thresh=0.5,split_num=6,mode='solop
             
             # breakpoint()
             
-            csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+            csv_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/region_data/').expanduser())
             csv_savename = 'enc_'+str(i)+'_regions_raw.csv'
             csv_isdir = os.path.isdir(csv_savepath)
     
@@ -1133,7 +1119,7 @@ def quiescent_id_thresh(enc='all',kind='rand',thresh=0.5,split_num=6,mode='solop
                 # breakpoint()
                 np.savetxt(file,csv_arr,header='start dates,end dates,duration',delimiter=',',fmt='%s',comments='')
         
-        pyt.del_data()    
+        pys.del_data()    
         
 def quiescent_prop_enc(enc='all', plot=True):
     # if enc == 'all':
@@ -1165,8 +1151,8 @@ def quiescent_prop_enc(enc='all', plot=True):
         enc_arr = [enc_flt[enc]]
     
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -1269,22 +1255,22 @@ def quiescent_prop(t0='2018-11-05',tf='2018-11-06'): #quiescent region propertie
         enci+=1
     
     csv_filename = 'enc_'+str(encounter)+'_regions_raw.csv'
-    csv_path='/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    csv_path=str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/region_data/').expanduser())
 
     # psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc',username=fields_id,password=fields_pass, level='l2',last_version=True)
-    # mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+    # mag_data = pys.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
     # breakpoint()
     # if encounter in [1,12]:
 
     #     psp.spc(trange=[t0,tf],level='L3',username=sweap_id,password=sweap_pass,last_version=True)
-    #     vel_data = pyt.get_data('psp_spc_vp_fit_RTN')
+    #     vel_data = pys.get_data('psp_spc_vp_fit_RTN')
     
     # else:
     #     psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-    #     vel_data = pyt.get_data('psp_spi_VEL_RTN_SUN')
+    #     vel_data = pys.get_data('psp_spi_VEL_RTN_SUN')
     
     # psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',username=fields_id,password=fields_pass,last_version=True)
-    # pos_data = pyt.get_data('position') #retrieve PSP position data from tplot variable
+    # pos_data = pys.get_data('position') #retrieve PSP position data from tplot variable
     
     df = pd.read_csv(csv_path+csv_filename)
     dfn = df.to_numpy()
@@ -1357,8 +1343,8 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     psp.fields(trange=[t0,tf], datatype='mag_RTN_4_Sa_per_Cyc', level='l2',last_version=True,username=fields_id,password=fields_pass)
     # psp.fields(trange=[t0,tf], datatype='mag_RTN', level='l2',last_version=True)
     
-    mag_data = pyt.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
-    # mag_data = pyt.get_data('psp_fld_l2_mag_RTN')
+    mag_data = pys.get_data('psp_fld_l2_mag_RTN_4_Sa_per_Cyc')
+    # mag_data = pys.get_data('psp_fld_l2_mag_RTN')
     
     mag_time_arr = mag_data[0]
     mag_data_arr = mag_data[1]
@@ -1383,7 +1369,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     if encounter in [1]:
 
         psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass,last_version=True)
-        vel_data = pyt.get_data('psp_spc_vp_fit_RTN')
+        vel_data = pys.get_data('psp_spc_vp_fit_RTN')
         
         vel_time_arr = vel_data[0]
         vel_data_arr = vel_data[1]
@@ -1393,7 +1379,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     else:
         
         psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-        vel_data_spi = pyt.get_data('psp_spi_VEL_RTN_SUN')
+        vel_data_spi = pys.get_data('psp_spi_VEL_RTN_SUN')
         vel_time_arr_spi = vel_data_spi[0]
         vel_data_arr_spi = vel_data_spi[1]
         
@@ -1404,10 +1390,10 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
         psp.spc(trange=[t0,tf], level='L3',username=sweap_id,password=sweap_pass,last_version=True)
         
         
-        vel_data_spc = pyt.get_data('psp_spc_vp_fit_RTN')
+        vel_data_spc = pys.get_data('psp_spc_vp_fit_RTN')
         
         if vel_data_spc == None:
-            vel_data_spc = pyt.get_data('spp_spc_vp_fit_RTN')
+            vel_data_spc = pys.get_data('spp_spc_vp_fit_RTN')
         
         vel_time_arr_spc = vel_data_spc[0]
         vel_data_arr_spc = vel_data_spc[1]
@@ -1490,15 +1476,15 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
         #--------------------------------------------------------------------#
         
         span_check_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(encounter)+'.cdf'
-        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/'
+        span_check_savepath = str(Path('~/Documents/SPAN Checks/').expanduser())
         
-        pyt.tplot_restore(span_check_savepath+span_check_savename)
+        pys.tplot_restore(span_check_savepath+span_check_savename)
     
-        SPAN_QTN_flag = pyt.get_data('SPAN_qual_flag')
+        SPAN_QTN_flag = pys.get_data('SPAN_qual_flag')
         SPAN_flag_time = SPAN_QTN_flag[0]
         SPAN_flag = SPAN_QTN_flag[1]
         
-        SPC_QTN_flag = pyt.get_data('SPC_qual_flag')
+        SPC_QTN_flag = pys.get_data('SPC_qual_flag')
         SPC_flag_time = SPC_QTN_flag[0]
         SPC_flag = SPC_QTN_flag[1]
         
@@ -1619,7 +1605,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
         v_r_data = vel_r_data_construct
         
     psp.fields(trange=[t0,tf], datatype='ephem_spp_hg', level='l1',last_version=True,username=fields_id,password=fields_pass)
-    pos_data = pyt.get_data('position') #retrieve PSP position data from tplot variable
+    pos_data = pys.get_data('position') #retrieve PSP position data from tplot variable
 
     pos_time_arr = pos_data[0]
     pos_data_arr = pos_data[1]
@@ -1765,7 +1751,7 @@ def quiescent_calc(t0='2018-11-05',tf='2018-11-06',pickle=False): #calculates z,
     # breakpoint()
     if pickle:
         
-        pickle_path = '/Users/besh2109/Documents/z_pickle/'
+        pickle_path = str(Path('~/Documents/z_pickle/').expanduser())
         pickle_name = ''
         
     
@@ -1778,9 +1764,9 @@ def quiescent_calc_enc(enc_num,enc_radius=60,save=False):
     
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     #print(hpos_path)
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-    #print(pyt.tplot_names())
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    #print(pys.tplot_names())
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -1832,7 +1818,7 @@ def quiescent_calc_enc(enc_num,enc_radius=60,save=False):
         carr_lat = varis['carr_lat']
         carr_dif = varis['carr_dif']
         
-        save_path = '/Users/besh2109/Documents/z_save/'
+        save_path = str(Path('~/Documents/z_save/').expanduser())
         
         pickle_tag = 'pickle/'
         numpy_tag = 'numpy/'
@@ -1857,19 +1843,19 @@ def quiescent_calc_enc(enc_num,enc_radius=60,save=False):
         
 
         
-        pyt.store_data("z", data={'x':z_time, 'y':z})
-        pyt.store_data("quiet_z", data={'x':z_time, 'y':quiet_z})
-        pyt.store_data("Br", data={'x':b_time, 'y':Br})
-        pyt.store_data("B_mag", data={'x':b_time, 'y':B_mag})
-        pyt.store_data("quiet_B", data={'x':b_time, 'y':quiet_B})
+        pys.store_data("z", data={'x':z_time, 'y':z})
+        pys.store_data("quiet_z", data={'x':z_time, 'y':quiet_z})
+        pys.store_data("Br", data={'x':b_time, 'y':Br})
+        pys.store_data("B_mag", data={'x':b_time, 'y':B_mag})
+        pys.store_data("quiet_B", data={'x':b_time, 'y':quiet_B})
         
-        pyt.store_data("carr_lon", data={'x':carr_time, 'y':carr_long})
-        pyt.store_data("carr_lat", data={'x':carr_time, 'y':carr_lat})
-        pyt.store_data("carr_dif",data={'x':carr_time, 'y':carr_dif})
+        pys.store_data("carr_lon", data={'x':carr_time, 'y':carr_long})
+        pys.store_data("carr_lat", data={'x':carr_time, 'y':carr_lat})
+        pys.store_data("carr_dif",data={'x':carr_time, 'y':carr_dif})
         
-        pyt_save_list = ['z',"quiet_z","Br","B_mag","quiet_B","carr_lon","carr_lat","carr_dif"]
+        pys_save_list = ['z',"quiet_z","Br","B_mag","quiet_B","carr_lon","carr_lat","carr_dif"]
         
-        pyt.tplot_save(pyt_save_list,save_path+tplot_tag+tplot_name)
+        pys.tplot_save(pys_save_list,save_path+tplot_tag+tplot_name)
         
     return varis
        
@@ -1881,9 +1867,9 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
         
         hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
         #print(hpos_path)
-        pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-        #print(pyt.tplot_names())
-        hpos = pyt.get_data('position')
+        pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+        #print(pys.tplot_names())
+        hpos = pys.get_data('position')
         
         hpos_time_arr = hpos[0]
         hpos_data_arr = hpos[1]
@@ -1931,7 +1917,7 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
                 # per_dist = per_dist_lst[enci]
             enci+=1
 
-    z_save_path = '/Users/besh2109/Documents/z_save/z_v03/tplot/'
+    z_save_path = str(Path('~/Documents/z_save/z_v03/tplot/').expanduser())
     z_save_name = 'z_tplot_enc'+str(enc_num)+'.cdf'
     
     filecheck = os.path.isfile(z_save_path+z_save_name)
@@ -1939,34 +1925,34 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
     # breakpoint()
     
     if filecheck:
-        pyt.tplot_restore(z_save_path+z_save_name)
+        pys.tplot_restore(z_save_path+z_save_name)
         
-        z_data = pyt.get_data('z')
+        z_data = pys.get_data('z')
         z_time = z_data[0]
         z = z_data[1]
         
-        quiet_z_data = pyt.get_data('quiet_z')
+        quiet_z_data = pys.get_data('quiet_z')
         quiet_z = quiet_z_data[1]
         
-        b_data = pyt.get_data('Br')
+        b_data = pys.get_data('Br')
         b_time = b_data[0]
         Br = b_data[1]
         
-        quiet_B_data = pyt.get_data('quiet_B')
+        quiet_B_data = pys.get_data('quiet_B')
         quiet_B = quiet_B_data[0]
         
-        B_mag_data = pyt.get_data('B_mag')
+        B_mag_data = pys.get_data('B_mag')
         B_mag_time = B_mag_data[0]
         B_mag = B_mag_data[1]
         
-        carr_data = pyt.get_data('carr_lon')
+        carr_data = pys.get_data('carr_lon')
         carr_time = carr_data[0]
         carr_long = carr_data[1]
         
-        carr_data = pyt.get_data('carr_lat')
+        carr_data = pys.get_data('carr_lat')
         carr_lat = carr_data[1]
         
-        carr_data = pyt.get_data('carr_dif')
+        carr_data = pys.get_data('carr_dif')
         carr_dif = carr_data[1]
         
     else:
@@ -2078,7 +2064,7 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
         # else:
         #     tffloat=pys.time_float(tf)
 
-    qregion_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/region_data/'
+    qregion_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/region_data/').expanduser())
     
     # breakpoint()
 
@@ -2257,7 +2243,7 @@ def quiescent_plot(t0='2018-11-04',tf='2018-11-05',enc=None,enc_radius=75,title=
         #     leg.legend_handles[2].set_linewidth(3) 
             # leg.legend_handles[3].set_linewidth(1.5) 
     
-    savepath_no_enc = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/z_plots/'
+    savepath_no_enc = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/z_plots/').expanduser())
     
     savepath_enc = savepath_no_enc+'Encs/'#+str(enc_num)+'/'
     
@@ -2302,9 +2288,9 @@ def quiescent_enc_plot(save=True,enc_save=True,other_comp=False):
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     #print(hpos_path)
     
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-    #print(pyt.tplot_names())
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    #print(pys.tplot_names())
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -2346,10 +2332,10 @@ def quiescent_enc_plot(save=True,enc_save=True,other_comp=False):
 def quiescent_vel(t0='2018-11-04',tf='2018-11-05'):
     
     psp.spi(trange=[t0,tf],level='L3',datatype='spi_sf00')
-    spi_data = pyt.get_data('VEL_RTN_SUN')
+    spi_data = pys.get_data('VEL_RTN_SUN')
     
     psp.spc(trange=[t0,tf],level='L3')
-    spc_data = pyt.get_data('vp_fit_RTN')
+    spc_data = pys.get_data('vp_fit_RTN')
     
     spi_time = spi_data[0]
     spi_dat = spi_data[1]
@@ -2396,9 +2382,9 @@ def SPAN_FOV(enc=1,enc_radius=45,plot=False, store=False):
         
         hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
         #print(hpos_path)
-        pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-        #print(pyt.tplot_names())
-        hpos = pyt.get_data('position')
+        pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+        #print(pys.tplot_names())
+        hpos = pys.get_data('position')
         
         hpos_time_arr = hpos[0]
         hpos_data_arr = hpos[1]
@@ -2442,16 +2428,16 @@ def SPAN_FOV(enc=1,enc_radius=45,plot=False, store=False):
         spi_vars = psp.spi(trange=trange, datatype=datatype, level='L3', time_clip=True,username=sweap_id,password=sweap_pass,last_version=True)
         
         prefix='psp_spi_'
-        # pyt.tplot([prefix+'SUN_DIST',prefix+'EFLUX_VS_ENERGY',prefix+'EFLUX_VS_THETA',prefix+'EFLUX_VS_PHI'])
+        # pys.tplot([prefix+'SUN_DIST',prefix+'EFLUX_VS_ENERGY',prefix+'EFLUX_VS_THETA',prefix+'EFLUX_VS_PHI'])
     
     
         #define variables
-        eflux_phi_data=pyt.get_data(prefix+'EFLUX_VS_PHI')
+        eflux_phi_data=pys.get_data(prefix+'EFLUX_VS_PHI')
         times_unix=eflux_phi_data.times
         eflux = eflux_phi_data.y
         phi = eflux_phi_data.v
         
-        rad_data = pyt.get_data('psp_spi_SUN_DIST')
+        rad_data = pys.get_data('psp_spi_SUN_DIST')
         rad = rad_data.y
         rad = np.array(rad-Rs)/Rs
         
@@ -2588,7 +2574,7 @@ def SPAN_FOV(enc=1,enc_radius=45,plot=False, store=False):
         if store:
         
             tplot_savename = 'SPAN_ion_fov_flags'+'_enc_'+str(enc_num)+'.cdf'
-            tplot_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
+            tplot_savepath = str(Path('~/Documents/SPAN Checks/FOV flags/').expanduser())
     
             tplot_time = times_unix
             
@@ -2602,17 +2588,17 @@ def SPAN_FOV(enc=1,enc_radius=45,plot=False, store=False):
             
             # breakpoint()
             
-            pyt.store_data("phi_fov", data={'x':tplot_time, 'y':tplot_phi_fov})
-            pyt.store_data("phi_fov_average", data={'x':tplot_time, 'y':tplot_phi_fov_av})
-            pyt.store_data("phi_fov_ratio", data={'x':tplot_time, 'y':tplot_phi_ratio})
-            pyt.store_data("psp_radial_dist_Rs",data={'x':tplot_time,'y':tplot_r_Rs})
+            pys.store_data("phi_fov", data={'x':tplot_time, 'y':tplot_phi_fov})
+            pys.store_data("phi_fov_average", data={'x':tplot_time, 'y':tplot_phi_fov_av})
+            pys.store_data("phi_fov_ratio", data={'x':tplot_time, 'y':tplot_phi_ratio})
+            pys.store_data("psp_radial_dist_Rs",data={'x':tplot_time,'y':tplot_r_Rs})
     
             cdf_var_list = ["phi_fov","phi_fov_average","phi_fov_ratio","psp_radial_dist_Rs"]
             
-            pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
+            pys.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
             
             
-            pyt.del_data()
+            pys.del_data()
             
 def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
     
@@ -2648,9 +2634,9 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         
         hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
         #print(hpos_path)
-        pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-        #print(pyt.tplot_names())
-        hpos = pyt.get_data('position')
+        pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+        #print(pys.tplot_names())
+        hpos = pys.get_data('position')
         
         hpos_time_arr = hpos[0]
         hpos_data_arr = hpos[1]
@@ -2690,21 +2676,21 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         trange=[t0,tf]
         
         psp.spi(trange=trange,level='L3',datatype='spi_sf00',username=sweap_id,password=sweap_pass,last_version=True)
-        spi_data = pyt.get_data('psp_spi_DENS')
+        spi_data = pys.get_data('psp_spi_DENS')
         spi_time = spi_data[0]
         spi_dens = spi_data[1]
         
         psp.spc(trange=trange, level='L3',username=sweap_id,password=sweap_pass,last_version=True)
-        spc_data = pyt.get_data('psp_spc_np_fit')
+        spc_data = pys.get_data('psp_spc_np_fit')
         
         if spc_data==None:
-            spc_data = pyt.get_data('spp_spc_np_fit')
+            spc_data = pys.get_data('spp_spc_np_fit')
         
         spc_time = spc_data[0]
         spc_dens = spc_data[1]
         
         psp.fields(trange=trange, datatype='sqtn_rfs_V1V2', level='L3',last_version=True,username=fields_id,password=fields_pass)
-        qtn_data = pyt.get_data('electron_density')
+        qtn_data = pys.get_data('electron_density')
         
         if qtn_data is None:
             qtn_data_exists = False
@@ -2714,7 +2700,7 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
             qtn_time = qtn_data[0]
             qtn_dens = qtn_data[1]
             
-            qtn_errs = pyt.get_data('electron_density_delta')
+            qtn_errs = pys.get_data('electron_density_delta')
             qtn_err_time = qtn_errs[0]
             qtn_errs = qtn_errs[1]
 
@@ -2785,11 +2771,11 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         #------------------construct SPAN quality flag---------------------#
         
         span_check_savename = 'SPAN_ion_fov_flags_enc_'+str(enc_num)+'.cdf'
-        span_check_savepath = '/Users/besh2109/Documents/SPAN Checks/FOV flags/'
+        span_check_savepath = str(Path('~/Documents/SPAN Checks/FOV flags/').expanduser())
         
-        pyt.tplot_restore(span_check_savepath+span_check_savename)
+        pys.tplot_restore(span_check_savepath+span_check_savename)
         
-        fov_flag_average = pyt.get_data('phi_fov_average')
+        fov_flag_average = pys.get_data('phi_fov_average')
         fov_av_time = fov_flag_average[0]
         fov_flag_av = fov_flag_average[1]
         
@@ -2905,7 +2891,7 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
         if store:
             # breakpoint()
             tplot_savename = 'SPAN_SPC_QTN_flags'+'_enc_'+str(enc_num)+'.cdf'
-            tplot_savepath = '/Users/besh2109/Documents/SPAN Checks/'
+            tplot_savepath = str(Path('~/Documents/SPAN Checks/').expanduser())
     
             tplot_time_spi = spi_dens_time_cor
             tplot_time_spc = spi_time
@@ -2913,12 +2899,12 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
             tplot_span_quality_flag = span_quality_flag
             tplot_spc_quality_flag = spc_quality_flag
             
-            pyt.store_data("SPAN_qual_flag", data={'x':tplot_time_spi, 'y':tplot_span_quality_flag})
-            pyt.store_data("SPC_qual_flag", data={'x':tplot_time_spc, 'y':tplot_spc_quality_flag})
+            pys.store_data("SPAN_qual_flag", data={'x':tplot_time_spi, 'y':tplot_span_quality_flag})
+            pys.store_data("SPC_qual_flag", data={'x':tplot_time_spc, 'y':tplot_spc_quality_flag})
     
             cdf_var_list = ["SPAN_qual_flag","SPC_qual_flag"]
             
-            pyt.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
+            pys.tplot_save(cdf_var_list,tplot_savepath+tplot_savename) #saves the quality flags to a .cdf file
         
         #------------------check agreement with figure---------------------#
         
@@ -2947,7 +2933,7 @@ def SPAN_SPC_QTN(enc=6,enc_radius=60,plot=False, store=False):
             
             plt.show()
         
-        pyt.del_data() #clear all tplot variables
+        pys.del_data() #clear all tplot variables
         
         # breakpoint()
 
@@ -2959,9 +2945,9 @@ def total_time_check(enc_radius=65):
     hpos_path = CONFIG['local_data_dir']+'/fields/l1/ephem_eclipj2000/full_mission/'
     #print(hpos_path)
     
-    pyt.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
-    #print(pyt.tplot_names())
-    hpos = pyt.get_data('position')
+    pys.cdf_to_tplot(hpos_path+'spp_fld_l1_ephem_eclipj2000_20180812_090000_20250831_090000_v02.cdf')
+    #print(pys.tplot_names())
+    hpos = pys.get_data('position')
     
     hpos_time_arr = hpos[0]
     hpos_data_arr = hpos[1]
@@ -3079,7 +3065,7 @@ def convergence_test(t0,tf,bincount=499,runs=1000,z_thresh=0.95,q_thresh = 0.5):
         i_max = len(z_time)
         # wndw_bars_i = np.array(z_time[0])
         
-        # csv_savepath = '/Users/besh2109/Desktop/Quiescent Region Connectivity/psp_regions/random_regions/'
+        # csv_savepath = str(Path('~/Desktop/Quiescent Region Connectivity/psp_regions/random_regions/').expanduser())
         # csv_savename = 'enc_'+str(enc_num)+'_quiescent_random.csv'
         
         bins = np.array([0])
